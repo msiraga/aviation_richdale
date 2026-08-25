@@ -31,7 +31,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
 import navigation
-from airdata import AirDataError, AirReferenceService, EnaireChartTileProxy
+from airdata import (
+    AirDataError,
+    AirReferenceService,
+    EnaireChartTileProxy,
+    GroundReferenceService,
+    initial_bearing as _ground_initial_bearing,
+    wind_components as _ground_wind_components,
+)
 from enaire import EnaireAipRepository, EnaireAd2Service, EnaireError, EnaireNotamService
 from navigation import (
     LatLon,
@@ -52,6 +59,7 @@ from weather import (
     WeatherServiceError,
     WindsAloftEngine,
     fetch_cloud_profile,
+    sample_winds_batch,
     serialize_taf_timeline,
 )
 
@@ -204,6 +212,7 @@ async def lifespan(app: FastAPI):
     app.state.airref = AirReferenceService(cache_dir=DATA_DIR / "cache" / "ourairports")
     app.state.chart_proxy = EnaireChartTileProxy(cache_dir=DATA_DIR / "cache")
     app.state.notam = EnaireNotamService()
+    app.state.ground = GroundReferenceService(cache_dir=DATA_DIR / "cache" / "ourairports")
     app.state.wmm_model = None
     log.info("engines initialized; data directory ready")
     yield
@@ -630,19 +639,20 @@ async def post_wind_grid(body: WindGridRequest):
 
     levels_out = []
     for alt in sorted(set(body.altitudes_ft)):
-        samples = []
-        for lat, lon in pts:
-            try:
-                w = await app.state.winds.sample(lat, lon, float(alt))
-            except Exception as exc:  # noqa: BLE001 — a dead grid cell must not kill the level
-                log.info("wind sample failed at %.2f,%.2f %dft: %s", lat, lon, alt, exc)
-                continue
-            samples.append({
+        try:
+            batch = await sample_winds_batch(pts, float(alt))
+        except Exception as exc:  # noqa: BLE001 — a dead grid level must not kill the ranking
+            log.info("batched wind sampling failed at %dft: %s", alt, exc)
+            continue
+        samples = [
+            {
                 "latitude": lat,
                 "longitude": lon,
                 "wind_from_deg": w.wind_from_deg_true,
                 "wind_speed_kt": w.wind_speed_kt,
-            })
+            }
+            for (lat, lon), w in batch.items()
+        ]
 
         if len(samples) < 2:
             continue
@@ -737,6 +747,67 @@ async def get_notams(bbox: str):
     active = [n for n in notams if not n["expired"]]
     return ok_payload({"notams": active, "count": len(active),
                        "expired_hidden": len(notams) - len(active)})
+
+
+class GroundRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    heading_deg: float | None = Field(default=None, ge=0, lt=360)
+
+
+@app.post("/api/ground/nearby")
+async def post_ground_nearby(body: GroundRequest):
+    """Taxi-phase picture: nearest airport, its runways, live wind components."""
+    nearby = await app.state.ground.nearby(body.latitude, body.longitude)
+    if nearby is None:
+        return ok_payload({"nearby": None})
+
+    wind = None
+    ident = nearby["airport"]["ident"]
+    try:
+        reports = await app.state.weather.latest_metars([ident])
+        if reports and reports[0].wind and reports[0].wind.speed_kt is not None:
+            wind = {
+                "from_deg_true": reports[0].wind.direction_from_deg_true,
+                "speed_kt": reports[0].wind.speed_kt,
+                "gust_kt": reports[0].wind.gust_kt,
+            }
+    except Exception as exc:  # noqa: BLE001 — wind is an enhancement here
+        log.info("ground-view METAR failed for %s: %s", ident, exc)
+
+    runways_out = []
+    for r in nearby["runways"]:
+        entry = dict(r)
+        # per-runway components against the published threshold heading
+        for tag, head_key in (("le", "le_heading_t"), ("he", "he_heading_t")):
+            heading = r[head_key]
+            if heading is None or wind is None or wind.get("from_deg_true") is None:
+                continue
+            head_xw, cross_xw = _ground_wind_components(
+                float(heading), float(wind["from_deg_true"]), float(wind["speed_kt"])
+            )
+            entry[f"{tag}_headwind_kt"] = round(head_xw, 1)
+            entry[f"{tag}_crosswind_kt"] = round(abs(cross_xw), 1)
+            entry[f"{tag}_crosswind_right"] = cross_xw >= 0
+        # bearing from aircraft to each threshold helps orientation on the ramp
+        if r["le_lat"] is not None:
+            entry["bearing_to_le"] = round(_ground_initial_bearing(
+                body.latitude, body.longitude, r["le_lat"], r["le_lon"]), 1)
+        if r["he_lat"] is not None:
+            entry["bearing_to_he"] = round(_ground_initial_bearing(
+                body.latitude, body.longitude, r["he_lat"], r["he_lon"]), 1)
+        runways_out.append(entry)
+
+    return ok_payload({
+        "nearby": {
+            "airport": nearby["airport"],
+            "distance_nm": nearby["distance_nm"],
+            "runways": runways_out,
+            "wind": wind,
+        },
+    })
 
 
 @app.post("/api/terrain/profile")

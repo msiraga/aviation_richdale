@@ -1122,6 +1122,107 @@ def _level_token(level: float) -> str:
     return str(int(level))
 
 
+async def sample_winds_batch(
+    points: Sequence[tuple[float, float]],
+    altitude_ft: float,
+    eta_utc: datetime | None = None,
+) -> dict[tuple[float, float], WindsAloftSample]:
+    """Sample the wind grid at many points with a single Open-Meteo call.
+
+    Open-Meteo accepts comma-joined coordinate lists, so an N-point route
+    costs one request per altitude level instead of N. Points are rounded to
+    the same grid the per-point engine uses, so caches stay coherent.
+    """
+    import asyncio as _asyncio
+
+    eta = eta_utc or datetime.now(timezone.utc)
+    if eta.tzinfo is None:
+        eta = eta.replace(tzinfo=timezone.utc)
+
+    rounded = [(round(lat, 2), round(lon, 2)) for lat, lon in points]
+    unique = sorted(set(rounded))
+    if not unique:
+        return {}
+
+    target_level = nearest_pressure_level_hpa(altitude_ft)
+    ranked_pairs = sorted(
+        (
+            (lv, f"wind_speed_{_level_token(lv)}hPa", f"wind_direction_{_level_token(lv)}hPa")
+            for lv in PRESSURE_LEVELS_HPA_FOR_QUERY
+        ),
+        key=lambda pair: abs(pair[0] - target_level),
+    )[:3]
+    var_names = [v for pair in ranked_pairs for v in pair[1:]]
+
+    params: dict[str, str | float] = {
+        "latitude": ",".join(f"{lat}" for lat, _ in unique),
+        "longitude": ",".join(f"{lon}" for _, lon in unique),
+        "hourly": ",".join(var_names),
+        "forecast_days": 2,
+        "wind_speed_unit": "kn",
+        "timezone": "GMT",
+    }
+    last_error: Exception | None = None
+    bodies: list[dict[str, Any]] | None = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(25.0), headers={"User-Agent": USER_AGENT}) as client:
+                response = await client.get(OPEN_METEO_BASE_URL, params=params)
+                response.raise_for_status()
+                body = response.json()
+            bodies = body if isinstance(body, list) else [body]
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            await _asyncio.sleep(0.8 * (attempt + 1))
+    if bodies is None:
+        raise WeatherServiceError(f"batched winds-aloft unreachable: {last_error}")
+
+    target_iso = eta.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:00")
+    out: dict[tuple[float, float], WindsAloftSample] = {}
+    for (lat_q, lon_q), body in zip(unique, bodies):
+        hourly = body.get("hourly") or {}
+        times = list(hourly.get("time") or [])
+        if not times:
+            continue
+        best_idx = min(
+            range(len(times)),
+            key=lambda k: abs(
+                (datetime.fromisoformat(times[k]).replace(tzinfo=timezone.utc) - eta).total_seconds()
+            ),
+        )
+        chosen: tuple[float, str, str] | None = None
+        for level, speed_var, dir_var in ranked_pairs:
+            speeds = hourly.get(speed_var)
+            dirs = hourly.get(dir_var)
+            if not speeds or not dirs:
+                continue
+            spd = speeds[best_idx]
+            dr = dirs[best_idx]
+            if spd is None or dr is None:
+                continue
+            chosen = (level, str(dr), str(spd))
+            break
+        if chosen is None:
+            continue
+        level, dr_s, spd_s = chosen
+        temp_var = f"temperature_{_level_token(level)}hPa"
+        temps = hourly.get(temp_var)
+        temp_val = temps[best_idx] if temps and best_idx < len(temps) else None
+        out[(lat_q, lon_q)] = WindsAloftSample(
+            latitude=lat_q,
+            longitude=lon_q,
+            altitude_ft=altitude_ft,
+            pressure_level_hpa=level,
+            wind_from_deg_true=((float(dr_s) % 360.0) + 360.0) % 360.0,
+            wind_speed_kt=max(0.0, float(spd_s)),
+            temperature_c=float(temp_val) if temp_val is not None else None,
+            valid_time_utc=datetime.fromisoformat(times[best_idx]).replace(tzinfo=timezone.utc),
+            provider=WindsAloftEngine.PROVIDER_LABEL,
+        )
+    return out
+
+
 def _as_float(value: Any) -> float | None:
     if value is None:
         return None

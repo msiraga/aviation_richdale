@@ -171,6 +171,107 @@ async def _load_navaids(cache_dir: Path) -> list[NavaidRecord]:
     return await asyncio.to_thread(_parse)
 
 
+async def _load_runways(cache_dir: Path) -> list[dict[str, Any]]:
+    """Runway geometry (thresholds, headings, dimensions) from OurAirports."""
+    path = await _ensure_csv(cache_dir, "runways.csv")
+
+    def _parse() -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                if row.get("closed") == "1":
+                    continue
+                length_ft = _parse_float(row.get("length_ft", "")) or 0.0
+                if length_ft < 500:
+                    continue
+                rows.append({
+                    "airport_ident": row.get("airport_ident", ""),
+                    "le_ident": row.get("le_ident") or "",
+                    "he_ident": row.get("he_ident") or "",
+                    "length_m": round(length_ft * 0.3048),
+                    "width_m": round((_parse_float(row.get("width_ft", "")) or 0.0) * 0.3048),
+                    "surface": row.get("surface") or "",
+                    "lighted": row.get("lighted") == "1",
+                    "le_lat": _parse_float(row.get("le_latitude_deg", "")),
+                    "le_lon": _parse_float(row.get("le_longitude_deg", "")),
+                    "he_lat": _parse_float(row.get("he_latitude_deg", "")),
+                    "he_lon": _parse_float(row.get("he_longitude_deg", "")),
+                    "le_heading_t": _parse_float(row.get("le_heading_degT", "")),
+                    "he_heading_t": _parse_float(row.get("he_heading_degT", "")),
+                })
+        return rows
+
+    return await asyncio.to_thread(_parse)
+
+
+def haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math as _m
+    p1, p2 = _m.radians(lat1), _m.radians(lat2)
+    dp = p2 - p1
+    dl = _m.radians(lon2 - lon1)
+    a = _m.sin(dp / 2) ** 2 + _m.cos(p1) * _m.cos(p2) * _m.sin(dl / 2) ** 2
+    return 3440.065 * 2 * _m.atan2(_m.sqrt(a), _m.sqrt(1 - a))
+
+
+def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math as _m
+    p1, p2 = _m.radians(lat1), _m.radians(lat2)
+    dl = _m.radians(lon2 - lon1)
+    y = _m.sin(dl) * _m.cos(p2)
+    x = _m.cos(p1) * _m.sin(p2) - _m.sin(p1) * _m.cos(p2) * _m.cos(dl)
+    return (_m.degrees(_m.atan2(y, x)) + 360.0) % 360.0
+
+
+def wind_components(aircraft_heading_deg: float, wind_from_deg: float, wind_speed_kt: float) -> tuple[float, float]:
+    """Return (headwind_kt, crosswind_kt_signed_right)."""
+    import math as _m
+    angle = _m.radians(wind_from_deg - aircraft_heading_deg)
+    return (
+        wind_speed_kt * _m.cos(angle),
+        wind_speed_kt * _m.sin(angle),
+    )
+
+
+class GroundReferenceService:
+    """Nearest-airport runway picture with live wind components for taxi phase."""
+
+    NEAR_NM = 6.0
+
+    def __init__(self, cache_dir: Path) -> None:
+        self.cache_dir = cache_dir
+        self._lock = asyncio.Lock()
+
+    async def nearby(self, lat: float, lon: float) -> dict[str, Any] | None:
+        async with self._lock:
+            airports = await _load_airports(self.cache_dir)
+            runways = await _load_runways(self.cache_dir)
+
+        by_ident: dict[str, list[dict[str, Any]]] = {}
+        for r in runways:
+            by_ident.setdefault(r["airport_ident"], []).append(r)
+        usable = {i for i, rwys in by_ident.items() if any(r["length_m"] >= 600 for r in rwys)}
+
+        best: AirportRecord | None = None
+        best_d = self.NEAR_NM
+        for a in airports:
+            if a.ident not in usable:
+                continue
+            d = haversine_nm(lat, lon, a.latitude_deg, a.longitude_deg)
+            if d < best_d:
+                best_d, best = d, a
+
+        if best is None:
+            return None
+
+        rwys = [r for r in by_ident.get(best.ident, []) if r["le_lat"] is not None or r["le_heading_t"] is not None]
+        rwys.sort(key=lambda r: -(r["length_m"]))
+        return {
+            "airport": best.to_dict(),
+            "distance_nm": round(best_d, 2),
+            "runways": rwys[:8],
+        }
+
+
 class AirReferenceService:
     """Bbox-filtered airport and navaid lookups over the cached datasets."""
 

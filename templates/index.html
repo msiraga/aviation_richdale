@@ -196,12 +196,17 @@ tailwind.config = {
   body.fly-mode #flyHud { display: block; }
   .hud-num { font-variant-numeric: tabular-nums; }
 
-  /* weather category legend */
+  /* weather category legend — informational only, never blocks map controls */
   #wxLegend {
-    position: absolute; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    z-index: 30; display: flex; flex-direction: column; gap: 4px;
+    position: absolute; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 15; display: flex; flex-direction: column; gap: 4px;
     padding: 8px 10px; font-size: 10px; letter-spacing: .08em;
+    pointer-events: none;
   }
+  /* ground (taxi) view card */
+  #groundPanel { position: absolute; left: 12px; top: 84px; z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
+  #groundPanel.show { display: block; }
+  #groundCanvas { width: 100%; height: 150px; display: block; border-radius: 10px; background: rgba(2,8,20,.55); }
   .wx-dot { width: 9px; height: 9px; border-radius: 9999px; display: inline-block; margin-right: 6px; }
 
   /* wind advice card inside results */
@@ -244,7 +249,7 @@ tailwind.config = {
   <div class="glass pointer-events-auto flex items-center gap-1.5 px-3 py-2 flex-wrap justify-end max-w-[calc(100vw-1rem)]">
     <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
 
-    <span class="zone-label">MAP</span>
+    <span class="zone-label" id="mapZoneLabel" title="cycle map style (same as the DARK/LIGHT/SAT button)" style="cursor:pointer">MAP</span>
     <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
     <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">CHART</button>
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
@@ -284,6 +289,18 @@ tailwind.config = {
   </div>
 </div>
 
+<div id="groundPanel" class="glass p-3">
+  <div class="flex items-center justify-between mb-1.5">
+    <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Ground · <span id="gpIdent">—</span></div>
+    <button id="gpClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
+  </div>
+  <canvas id="groundCanvas"></canvas>
+  <div id="gpRows" class="mt-2 space-y-1 max-h-[150px] overflow-y-auto text-[10px] font-mono"></div>
+  <div class="mt-1.5 text-[8px] leading-snug text-slate-500">
+    Runways &amp; headings from OurAirports; taxiway letters are only printed on the ADG chart — open the AD-2 for the official diagram.
+  </div>
+</div>
+
 <div id="flyHud">
   <div class="glass px-5 py-4 w-[min(92vw,560px)]">
     <div class="flex items-center justify-between gap-4 mb-2">
@@ -300,7 +317,58 @@ tailwind.config = {
         </div><div class="text-[9px] tracking-widest text-slate-500">XTK NM</div></div>
     </div>
     <div class="cdi-track"><div class="cdi-needle" id="cdiNeedle"></div></div>
-    <div class="flex justify-between mt-1 text-[8px] tracking-widest text-slate-500"><span>◀ LEFT</span><span>COURSE (1 NM FS)</span><span>RIGHT ▶</span></div>
+    <div class="flex justify-between mt-1 mb-2 text-[8px] tracking-widest text-slate-500"><span>◀ LEFT</span><span>COURSE (1 NM FS)</span><span>RIGHT ▶</span></div>
+
+    <!-- mini six-pack -->
+    <div class="flex items-center gap-2 mb-2">
+      <canvas id="gaugeAttitude" width="120" height="120" style="width:60px;height:60px;border-radius:12px;background:#050b16;border:1px solid rgba(255,255,255,.08)"></canvas>
+      <canvas id="gaugeHeading" width="120" height="120" style="width:60px;height:60px;border-radius:12px;background:#050b16;border:1px solid rgba(255,255,255,.08)"></canvas>
+      <div class="flex flex-col gap-1 flex-1">
+        <div class="rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+          <span class="text-[8px] tracking-widest text-slate-500">ALT FT</span>
+          <span class="hud-num float-right text-sm font-bold text-sky-200" id="hudAlt">----</span>
+        </div>
+        <div class="rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+          <span class="text-[8px] tracking-widest text-slate-500">V/S FPM</span>
+          <span class="hud-num float-right text-sm font-bold text-violet-200" id="hudVs">--</span>
+        </div>
+        <button id="sensorsBtn" class="chip w-full py-1 text-[9px] tracking-widest">ENABLE SENSORS</button>
+      </div>
+    </div>
+
+    <!-- VOR tuner -->
+    <div id="vorPanel" class="hidden rounded-xl border border-sky-400/25 bg-sky-400/5 px-3 py-2">
+      <div class="flex items-center gap-3">
+        <div class="leading-tight">
+          <div class="text-[13px] font-extrabold text-sky-200 font-mono" id="vorIdent">---</div>
+          <div class="text-[8px] tracking-widest text-slate-500" id="vorFreq">— MHz</div>
+        </div>
+        <div class="text-center">
+          <div class="text-[8px] tracking-widest text-slate-500">OBS</div>
+          <div class="flex items-center gap-1">
+            <button id="vorMinus" class="chip px-1.5 py-0 text-[11px]">−</button>
+            <span class="hud-num text-base font-bold text-cyan-100 font-mono w-[46px]" id="vorObs">---°</span>
+            <button id="vorPlus" class="chip px-1.5 py-0 text-[11px]">+</button>
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="text-[8px] tracking-widest text-slate-500">DST</div>
+          <div class="hud-num text-sm font-bold text-emerald-200 font-mono" id="vorDst">--.-</div>
+        </div>
+        <div class="text-center">
+          <div class="text-[8px] tracking-widest text-slate-500">FLAG</div>
+          <div class="hud-num text-sm font-bold font-mono text-amber-200" id="vorFlag">—</div>
+        </div>
+        <div class="ml-auto flex flex-col items-center">
+          <div class="relative w-[110px] h-[14px] rounded bg-white/10 overflow-hidden">
+            <div class="absolute inset-y-0 left-1/2 w-px bg-white/40"></div>
+            <div id="vorNeedle" class="absolute top-0 h-full w-[3px] bg-sky-300 left-1/2 -translate-x-1/2 transition-all duration-300"></div>
+          </div>
+          <div class="text-[7px] tracking-widest text-slate-500 mt-0.5">CDI · FULL = 10°</div>
+        </div>
+      </div>
+    </div>
+    <div id="vorHint" class="mt-1.5 text-[8px] text-slate-500 hidden">Tap a VOR on the map → TUNE to navigate by it.</div>
   </div>
 </div>
 
@@ -693,6 +761,7 @@ map.on('load', () => {
       type: 'raster',
       tiles: [BOOT.ofmTileUrl],
       tileSize: 256,
+      maxzoom: 11,
       attribution: '&copy; OpenFlightMaps'
     });
     map.addLayer({
@@ -707,6 +776,7 @@ map.on('load', () => {
     type: 'raster',
     tiles: [`${location.origin}/api/charts/vfr/tile/{z}/{x}/{y}.png`],
     tileSize: 512,
+    maxzoom: 12,   // proxy caps at z12; beyond that MapLibre upscales instead of erroring
     attribution: '&copy; ENAIRE &mdash; Insignia VFR'
   });
   map.addLayer({
@@ -1545,6 +1615,17 @@ const GpsManager = (() => {
     gpsPosition = [latitude, longitude];
     window.__richdaleGpsSpeedKt = (typeof position.coords.speed === 'number' && position.coords.speed > 0)
       ? position.coords.speed * 1.94384 : null;
+    window.__richdaleGpsHeadingDeg =
+      (typeof position.coords.heading === 'number' && !Number.isNaN(position.coords.heading))
+        ? position.coords.heading
+        : (window.__richdaleGpsPrevFix
+            ? bearingToDeg(window.__richdaleGpsPrevFix[0], window.__richdaleGpsPrevFix[1], latitude, longitude)
+            : null);
+    if (window.__richdaleGpsSpeedKt && window.__richdaleGpsSpeedKt > 3) {
+      window.__richdaleGpsPrevFix = [latitude, longitude];
+    }
+    updatePlaneMarker(latitude, longitude, window.__richdaleGpsHeadingDeg);
+    pollGroundView();
     appendTrackPoint(latitude, longitude,
       position.timestamp ? new Date(position.timestamp).toISOString() : new Date().toISOString());
     updateSunChip();
@@ -1565,12 +1646,24 @@ const GpsManager = (() => {
 
   function handleError(err) {
     const messages = {
-      1: 'GPS permission denied — enable location for this site.',
-      2: 'Position unavailable — no GNSS fix yet.',
-      3: 'GPS timeout — keep the device sky-facing.',
+      1: 'GPS permission denied. On iOS: Settings → Privacy → Location Services → Safari Websites → Allow + Precise ON.',
+      2: 'No fix yet. iOS needs Precise Location and a clear sky; also confirm no certificate warning appeared when loading this page.',
+      3: 'GPS timeout — restarting the watch automatically.',
     };
     setStatus('bg-rose-500', 'GPS ERR');
-    showToast(messages[err.code] || 'GPS failure.', 'error');
+    showToast(messages[err.code] || 'GPS failure.', 'error', 9000);
+    if (err.code === 3 && watching && !window.__richdaleGpsRestarted) {
+      // iOS sometimes kills a watch after one timeout — restart it exactly once
+      window.__richdaleGpsRestarted = true;
+      navigator.geolocation.clearWatch(watchId);
+      setTimeout(() => {
+        if (!watching) return;
+        watchId = navigator.geolocation.watchPosition(handleFix, handleError, {
+          enableHighAccuracy: true, maximumAge: 2000, timeout: 20000,
+        });
+        setStatus('bg-amber-400 pulse-dot', 'GPS ACQ…');
+      }, 1200);
+    }
   }
 
   return {
@@ -1627,6 +1720,7 @@ $('basemapToggle').addEventListener('click', () => {
   if (map.getLayer('bg')) map.setPaintProperty('bg', 'background-color', next.bg);
   $('basemapToggle').textContent = next.label;
 });
+$('mapZoneLabel').addEventListener('click', () => $('basemapToggle').click());
 
 const composerSidebar = $('sidebar');
 setTimeout(() => {
@@ -1676,6 +1770,7 @@ function currentBbox() {
 }
 
 const airportsCache = new Map();   // ident -> record
+const navaidsCache = new Map();    // ident -> record
 let lastNavlog = null;
 let gpsPosition = null;            // latest fix [lat, lon] for radial math
 let airportsVisible = false;
@@ -1719,7 +1814,9 @@ function setAirportData(list) {
 }
 
 function setNavaidData(list) {
+  navaidsCache.clear();
   const features = list.map(n => {
+    navaidsCache.set(n.ident, n);
     const family = String(n.type).startsWith('NDB') ? 'ndb' : 'vor';
     return {
       type: 'Feature',
@@ -1748,7 +1845,8 @@ function airportPopupHtml(a) {
     <div>${a.name}</div>
     <div class="text-slate-400">${a.kind} · ${a.elevation_ft} ft${a.municipality ? ' · ' + a.municipality : ''}</div>
     <button onclick="window.__richdaleMetar('${a.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">METAR</button>
-    ${/^LE/.test(a.ident) ? `<button onclick="window.__richdaleCharts('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">AD-2 doc</button>` : ''}
+    ${/^LE/.test(a.ident) ? `<button onclick="window.__richdaleCharts('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">AD-2 doc</button>
+    <button onclick="window.__richdaleVac('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">VAC chart</button>` : ''}
   </div>`;
 }
 
@@ -1762,6 +1860,7 @@ function navaidPopupHtml(n) {
     <div class="font-bold text-sky-200">${n.ident} · ${n.type}${n.freq ? ` ${n.freq} MHz` : ''}</div>
     <div>${n.name}</div>
     ${radialLine}
+    ${n.family === 'vor' ? `<button onclick="window.__richdaleTuneVor('${n.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">TUNE VOR</button>` : ''}
   </div>`;
 }
 
@@ -1780,6 +1879,19 @@ window.__richdaleCharts = async function (icao) {
     window.open(snap.ad2.source_url, '_blank');
     showToast(`Opened the ENAIRE AD 2 document for ${snap.ad2.icao}.`, 'info');
   } catch (err) { showToast(`Charts unavailable: ${err.message}`, 'error'); }
+};
+
+window.__richdaleVac = async function (icao) {
+  try {
+    const snap = await api(`/api/aip/ad2/${icao}`);
+    const url = snap.ad2.vac_url || snap.ad2.source_url;
+    window.open(url, '_blank');
+    showToast(
+      snap.ad2.vac_url
+        ? `Opened the VFR arrival/departure chart (VAC) for ${icao}.`
+        : `No separate VAC found — opened the full AD-2 (VAC pages are inside).`,
+      'info');
+  } catch (err) { showToast(`VAC unavailable: ${err.message}`, 'error'); }
 };
 
 /* ------------------------------- Track log -------------------------------- */
@@ -1933,8 +2045,16 @@ async function refreshRadarFrame() {
     const frames = (data.radar && data.radar.past) || [];
     if (!frames.length) throw new Error('no radar frames');
     const frame = frames[frames.length - 1];
-    radarFrameUrl = `${data.host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`;
-    if (map.getSource('rainradar')) map.getSource('rainradar').tiles = [radarFrameUrl];
+    radarFrameUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    // MapLibre cannot mutate tiles on a live source — swap the source cleanly
+    if (radarVisible && map.getLayer('rainradar-layer')) {
+      map.removeLayer('rainradar-layer');
+      map.removeSource('rainradar');
+      map.addSource('rainradar', { type: 'raster', tiles: [radarFrameUrl], tileSize: 256,
+        maxzoom: 13, attribution: '&copy; RainViewer' });
+      map.addLayer({ id: 'rainradar-layer', type: 'raster', source: 'rainradar',
+        paint: { 'raster-opacity': 0.75 } });
+    }
   } catch (err) {
     showToast(`Radar unavailable: ${err.message}`, 'warn');
   }
@@ -1948,7 +2068,7 @@ $('radarToggle').addEventListener('click', async () => {
       await refreshRadarFrame();
       if (!radarFrameUrl) { radarVisible = false; return; }
       map.addSource('rainradar', { type: 'raster', tiles: [radarFrameUrl], tileSize: 256,
-        attribution: '&copy; RainViewer' });
+        maxzoom: 13, attribution: '&copy; RainViewer' });
       map.addLayer({ id: 'rainradar-layer', type: 'raster', source: 'rainradar',
         paint: { 'raster-opacity': 0.75 } });
     } else {
@@ -2104,12 +2224,16 @@ function setFlyMode(on) {
   flyModeActive = on;
   document.body.classList.toggle('fly-mode', on);
   $('flyToggle').style.background = on ? 'rgba(251,146,60,0.3)' : '';
+  setCorridor(on);
   if (on) {
     if (gpsPosition) map.flyTo({ center: [gpsPosition[1], gpsPosition[0]], zoom: 11, pitch: 30 });
+    if (!vorSelection) $('vorHint').classList.remove('hidden');
     hudTimerId = setInterval(updateHud, 1000);
     updateHud();
   } else {
     clearInterval(hudTimerId);
+    setCorridor(false);
+    $('vorHint').classList.add('hidden');
   }
 }
 
@@ -2185,6 +2309,366 @@ function updateHud() {
 // expose GPS speed for the HUD
 window.__richdaleGpsSpeedKt = null;
 window.__richdaleRouteProgress = null;
+
+/* ===================== AIRCRAFT MARKER + FLY CORRIDOR ====================== */
+
+function makePlaneIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.translate(32, 32);
+  ctx.fillStyle = '#ffa63d';
+  ctx.strokeStyle = '#0b1220';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  // simple low-wing silhouette pointing north (up)
+  ctx.moveTo(0, -24);
+  ctx.lineTo(6, -8);
+  ctx.lineTo(26, 4);
+  ctx.lineTo(26, 10);
+  ctx.lineTo(5, 7);
+  ctx.lineTo(4, 16);
+  ctx.lineTo(11, 22);
+  ctx.lineTo(11, 25);
+  ctx.lineTo(0, 23);
+  ctx.lineTo(-11, 25);
+  ctx.lineTo(-11, 22);
+  ctx.lineTo(-4, 16);
+  ctx.lineTo(-5, 7);
+  ctx.lineTo(-26, 10);
+  ctx.lineTo(-26, 4);
+  ctx.lineTo(-6, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  return c;
+}
+
+function updatePlaneMarker(lat, lon, headingDeg) {
+  if (!map.getSource('gpsPlane')) {
+    map.addImage('plane-icon', makePlaneIcon(), { pixelRatio: 2 });
+    map.addSource('gpsPlane', { type: 'geojson', data: EMPTY_ROUTE });
+    map.addLayer({
+      id: 'gps-plane', type: 'symbol', source: 'gpsPlane',
+      layout: {
+        'icon-image': 'plane-icon',
+        'icon-size': 0.62,
+        'icon-rotate': ['coalesce', ['get', 'heading'], 0],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    });
+  }
+  const moving = window.__richdaleGpsSpeedKt && window.__richdaleGpsSpeedKt > 3
+                 && headingDeg !== null && headingDeg !== undefined;
+  map.getSource('gpsPlane').setData({
+    type: 'FeatureCollection',
+    features: moving ? [{
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+      properties: { heading: Math.round(headingDeg) },
+    }] : [],
+  });
+}
+
+function setCorridor(on) {
+  if (!map.getSource('route')) return;
+  if (!map.getLayer('route-corridor')) {
+    map.addLayer({
+      id: 'route-corridor', type: 'line', source: 'route',
+      layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#38bdf8',
+        'line-opacity': 0.14,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 12, 12, 30, 15, 55],
+      },
+    }, 'route-core');
+  }
+  setLayerVisibility('route-corridor', on);
+}
+
+/* ============================ GROUND (TAXI) VIEW =========================== */
+
+let groundTimerActive = false, groundData = null;
+
+$('gpClose')?.addEventListener('click', () => $('groundPanel').classList.remove('show'));
+
+async function pollGroundView() {
+  if (groundTimerActive) return;
+  const speedKt = window.__richdaleGpsSpeedKt || 0;
+  if (!gpsPosition || speedKt > 80) return;   // only meaningful on the ground / slow
+  groundTimerActive = true;
+  try {
+    const res = await api('/api/ground/nearby', {
+      method: 'POST',
+      body: { latitude: gpsPosition[0], longitude: gpsPosition[1] },
+    });
+    groundData = res.nearby;
+    renderGroundPanel();
+  } catch { /* opportunistic */ }
+  finally { setTimeout(() => { groundTimerActive = false; }, 8000); }
+}
+
+function renderGroundPanel() {
+  const panel = $('groundPanel');
+  if (!groundData || flyModeActive) { panel.classList.remove('show'); return; }
+  const { airport, distance_nm, runways } = groundData;
+  $('gpIdent').textContent = `${airport.ident} · ${distance_nm} NM`;
+  let rows = '';
+  for (const r of runways.slice(0, 6)) {
+    for (const side of ['le', 'he']) {
+      const ident = r[`${side}_ident`];
+      if (!ident || r[`${side}_headwind_kt`] === undefined) continue;
+      const hw = r[`${side}_headwind_kt`], xw = r[`${side}_crosswind_kt`];
+      const xwColor = xw > 15 ? '#ef4444' : xw > 8 ? '#f59e0b' : '#22c55e';
+      rows += `<div class="flex justify-between gap-2">
+        <span class="text-cyan-200 font-bold">RWY ${ident}</span>
+        <span class="text-slate-400">${r.length_m} m</span>
+        <span style="color:${hw >= 0 ? '#22c55e' : '#f59e0b'}">HW ${hw >= 0 ? '' : '+'}${Math.round(hw)}</span>
+        <span style="color:${xwColor}">XW ${xw.toFixed(0)}</span>
+      </div>`;
+    }
+  }
+  $('gpRows').innerHTML = rows || '<div class="text-slate-500">No runway geometry cached.</div>';
+  drawGroundCanvas(runways, airport, distance_nm);
+  panel.classList.add('show');
+}
+
+function drawGroundCanvas(runways, airport, distanceNm) {
+  const canvas = $('groundCanvas');
+  const W = canvas.width = canvas.clientWidth * 2;
+  const H = canvas.height = 300;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // collect all points (airport ref + thresholds + own position) to auto-fit
+  const pts = [];
+  for (const r of runways) {
+    if (r.le_lat !== null) pts.push([r.le_lat, r.le_lon]);
+    if (r.he_lat !== null) pts.push([r.he_lat, r.he_lon]);
+  }
+  pts.push([airport.latitude ?? airport.lat ?? airport.latitude_deg ?? 0, airport.longitude ?? airport.lon ?? airport.longitude_deg ?? 0]);
+  if (gpsPosition) pts.push(gpsPosition);
+  const valid = pts.filter(p => p[0] || p[1]);
+  if (valid.length < 2) return;
+
+  const meanLat = valid.reduce((s, p) => s + p[0], 0) / valid.length * Math.PI / 180;
+  const nmPerDegLat = 60, nmPerDegLon = 60 * Math.cos(meanLat);
+  const cx = valid.reduce((s, p) => s + p[1], 0) / valid.length;
+  const cy = valid.reduce((s, p) => s + p[0], 0) / valid.length;
+  const toXY = ([lat, lon]) => [(lon - cx) * nmPerDegLon, (cy - lat) * nmPerDegLat]; // nm, y-up
+
+  let span = 0.35; // minimum half-span in NM keeps the diagram readable on the ramp
+  for (const p of valid) {
+    const [x, y] = toXY(p);
+    span = Math.max(span, Math.abs(x), Math.abs(y));
+  }
+  const scale = (W / 2 - 40) / span;
+  const project = p => {
+    const [x, y] = toXY(p);
+    return [W / 2 + x * scale, H / 2 - y * scale];
+  };
+
+  // runway rectangles
+  for (const r of runways) {
+    if (r.le_lat === null || r.he_lat === null) continue;
+    const a = project([r.le_lat, r.le_lon]);
+    const b = project([r.he_lat, r.he_lon]);
+    ctx.strokeStyle = 'rgba(148,163,184,0.9)';
+    ctx.fillStyle = 'rgba(100,116,139,0.28)';
+    ctx.lineWidth = 3;
+    // rectangle width proportional to runway width, minimum visible
+    const wpx = Math.max(6, (r.width_m || 30) / 1852 * scale);
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    ctx.save();
+    ctx.translate(a[0], a[1]);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.rect(0, -wpx / 2, len, wpx);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    // threshold labels
+    ctx.font = 'bold 20px system-ui';
+    ctx.fillStyle = '#a5f3fc';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (r.le_ident) ctx.fillText(r.le_ident, a[0] - Math.cos(ang) * 26, a[1] - Math.sin(ang) * 26);
+    if (r.he_ident) ctx.fillText(r.he_ident, b[0] + Math.cos(ang) * 26, b[1] + Math.sin(ang) * 26);
+  }
+
+  // own aircraft arrow
+  if (gpsPosition) {
+    const [px, py] = project(gpsPosition);
+    const hdg = (window.__richdaleGpsHeadingDeg ?? 0) * Math.PI / 180;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(hdg);
+    ctx.fillStyle = '#ffa63d';
+    ctx.beginPath();
+    ctx.moveTo(0, -16); ctx.lineTo(9, 12); ctx.lineTo(0, 6); ctx.lineTo(-9, 12);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // scale bar
+  const nmPx = scale;
+  ctx.fillStyle = 'rgba(148,163,184,0.85)';
+  ctx.fillRect(20, H - 34, nmPx, 3);
+  ctx.font = '16px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText('1 NM', 20, H - 42);
+}
+
+/* ============================== VOR TUNER ================================== */
+
+let vorSelection = null;   // {ident, freq, lat, lon, obs}
+window.__richdaleTuneVor = function (ident) {
+  const rec = navaidsCache.get(ident);
+  if (!rec) return;
+  const radialFromMe = gpsPosition
+    ? bearingToDeg(rec.latitude, rec.longitude, gpsPosition[0], gpsPosition[1])
+    : 0;
+  vorSelection = {
+    ident: rec.ident,
+    freq: rec.freq ? `${rec.freq} MHz` : '',
+    latitude: rec.latitude,
+    longitude: rec.longitude,
+    obs: Math.round(radialFromMe),
+  };
+  $('vorPanel').classList.remove('hidden');
+  $('vorHint').classList.add('hidden');
+  showToast(`Tuned ${rec.ident}${rec.freq ? ` ${rec.freq} MHz` : ''} — OBS set to your current radial.`, 'info');
+};
+
+$('vorMinus').addEventListener('click', () => { if (vorSelection) vorSelection.obs = (vorSelection.obs + 355) % 360; updateVorPanel(); });
+$('vorPlus').addEventListener('click', () => { if (vorSelection) vorSelection.obs = (vorSelection.obs + 5) % 360; updateVorPanel(); });
+
+function updateVorPanel() {
+  if (!vorSelection) return;
+  $('vorIdent').textContent = vorSelection.ident;
+  $('vorFreq').textContent = vorSelection.freq;
+  $('vorObs').textContent = `${String(vorSelection.obs).padStart(3, '0')}°`;
+  if (!gpsPosition) return;
+  haversineToVor(vorSelection, gpsPosition);
+  const radialFromStation = bearingToDeg(vorSelection.latitude, vorSelection.longitude, gpsPosition[0], gpsPosition[1]);
+  const distNm = (() => {
+    const R = 3440.065, p1 = gpsPosition[0] * Math.PI / 180, p2 = vorSelection.latitude * Math.PI / 180;
+    const dp = p2 - p1, dl = (vorSelection.longitude - gpsPosition[1]) * Math.PI / 180;
+    const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  })();
+  $('vorDst').textContent = distNm.toFixed(1);
+  // deviation: how far the OBS course sits from the radial we are actually ON
+  let dev = ((vorSelection.obs - radialFromStation + 540) % 360) - 180;
+  const needlePct = 50 + Math.max(-1, Math.min(1, dev / 10)) * 46;
+  $('vorNeedle').style.left = `${needlePct}%`;
+  // TO/FROM: station lies ahead within ±90° of the OBS reciprocal when flying TO
+  let toDev = ((vorSelection.obs + 180 - radialFromStation + 540) % 360) - 180;
+  $('vorFlag').textContent = distNm < 0.3 ? 'ZONE' : (Math.abs(toDev) < 90 ? 'TO' : 'FROM');
+}
+
+function haversineToVor() { /* folded into updateVorPanel */ }
+
+/* ============================ MINI SIX-PACK ================================ */
+
+const sixPack = { roll: 0, pitch: 0, heading: null, altFt: null, vsFpm: 0, lastAlt: null, lastAltT: 0 };
+let sensorsOn = false, gaugeTimer = null;
+
+$('sensorsBtn').addEventListener('click', async () => {
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res !== 'granted') { showToast('Motion sensors denied.', 'warn'); return; }
+    }
+    window.addEventListener('deviceorientation', e => {
+      if (e.beta === null) return;
+      sixPack.roll = -(e.gamma || 0);       // phone held portrait: gamma ~ roll
+      sixPack.pitch = (e.beta || 0) - 90;   // flat-holding pilot ≈ level horizon
+      if (e.webkitCompassHeading) sixPack.heading = e.webkitCompassHeading;
+      else if (e.alpha !== null) sixPack.heading = (360 - e.alpha) % 360;
+    });
+    sensorsOn = true;
+    $('sensorsBtn').style.display = 'none';
+  } catch { showToast('Sensors unavailable on this device.', 'warn'); }
+});
+
+function drawGauges() {
+  if (!flyModeActive) return;
+  drawAttitude($('gaugeAttitude'));
+  drawHeadingDial($('gaugeHeading'));
+}
+
+function drawAttitude(canvas) {
+  const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  const r = W / 2;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(r, r, r - 4, 0, Math.PI * 2); ctx.clip();
+  ctx.translate(r, r);
+  ctx.rotate(sixPack.roll * Math.PI / 180);
+  const py = sixPack.pitch * (H / 120);
+  ctx.fillStyle = '#1d4ed8'; ctx.fillRect(-W, -H + py, W * 2, H * 2);          // sky
+  ctx.fillStyle = '#7c4a12'; ctx.fillRect(-W, py, W * 2, H * 2);               // ground
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-W, py); ctx.lineTo(W, py); ctx.stroke();        // horizon
+  ctx.restore();
+  // fixed aircraft symbol
+  ctx.strokeStyle = '#ffb703'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(r - 34, r); ctx.lineTo(r - 10, r); ctx.lineTo(r - 4, r + 6);
+  ctx.moveTo(r + 34, r); ctx.lineTo(r + 10, r); ctx.lineTo(r + 4, r + 6);
+  ctx.stroke();
+}
+
+function drawHeadingDial(canvas) {
+  const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height, r = W / 2;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(r, r);
+  const hdg = (window.__richdaleGpsHeadingDeg ?? sixPack.heading ?? 0);
+  ctx.rotate(-hdg * Math.PI / 180);
+  for (let d = 0; d < 360; d += 30) {
+    ctx.save();
+    ctx.rotate(d * Math.PI / 180);
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -r + 10); ctx.lineTo(0, -r + (d % 90 === 0 ? 22 : 16)); ctx.stroke();
+    if (d % 90 === 0) {
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 18px system-ui';
+      ctx.textAlign = 'center';
+      const lbl = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[d];
+      ctx.fillText(lbl, 0, -r + 38);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+  // lubber line
+  ctx.strokeStyle = '#ffb703'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(r, 6); ctx.lineTo(r, 22); ctx.stroke();
+  ctx.fillStyle = '#ffb703'; ctx.font = 'bold 20px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(`${String(Math.round(hdg)).padStart(3, '0')}°`, r, r + 4);
+}
+
+setInterval(() => {
+  if (!flyModeActive) return;
+  // altitude + vertical speed from GPS elevation
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const alt = pos.coords.altitude;
+      if (alt !== null && alt !== undefined) {
+        const nowMs = Date.now();
+        if (sixPack.lastAlt !== null && nowMs - sixPack.lastAltT > 1500) {
+          sixPack.vsFpm = Math.round((alt - sixPack.lastAlt) / ((nowMs - sixPack.lastAltT) / 1000) * 196.85);
+        }
+        sixPack.lastAlt = alt; sixPack.lastAltT = nowMs;
+        sixPack.altFt = Math.round(alt * 3.28084);
+      }
+      $('hudAlt').textContent = sixPack.altFt ?? '----';
+      $('hudVs').textContent = sixPack.vsFpm > 0 ? `+${sixPack.vsFpm}` : String(sixPack.vsFpm);
+    }, () => {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 1000 });
+  }
+  drawGauges();
+  updateVorPanel();
+}, 1000);
 
 /* ========================= 3D CORRIDOR OVERLAY ============================= */
 

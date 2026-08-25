@@ -155,6 +155,7 @@ class Ad2Snapshot:
     reporting_points: tuple[ReportingPoint, ...]
     runways: tuple[RunwayDesignator, ...]
     parse_notes: tuple[str, ...]
+    vac_url: str | None = None
 
     def to_cache_dict(self) -> dict:
         return {
@@ -173,6 +174,7 @@ class Ad2Snapshot:
             ],
             "runways": [{"designation": r.designation} for r in self.runways],
             "parse_notes": list(self.parse_notes),
+            "vac_url": self.vac_url,
         }
 
     @classmethod
@@ -196,6 +198,7 @@ class Ad2Snapshot:
             ),
             runways=tuple(RunwayDesignator(designation=r["designation"]) for r in raw.get("runways", [])),
             parse_notes=tuple(raw.get("parse_notes", [])),
+            vac_url=raw.get("vac_url"),
         )
 
 
@@ -515,38 +518,44 @@ class EnaireAd2Service:
                 runways=stale.runways,
                 parse_notes=stale.parse_notes
                 + (f"Network unavailable — showing data cached {age_hours:.0f} h ago",),
+                vac_url=stale.vac_url,
             )
 
         try:
-            vac_text = await self._load_vac_text(target)
+            vac_text, vac_url = await self._load_vac_text(target)
         except (EnaireError, httpx.HTTPError) as exc:
             log.info("VAC chart unavailable for %s: %s", target, exc)
         else:
-            if vac_text:
-                extra_points = parse_reporting_points_from_vac(vac_text)
-                if extra_points:
-                    snapshot = Ad2Snapshot(
-                        icao=snapshot.icao,
-                        source_url=snapshot.source_url,
-                        fetched_at_utc=snapshot.fetched_at_utc,
-                        aerodrome_name=snapshot.aerodrome_name,
-                        arp_latitude=snapshot.arp_latitude,
-                        arp_longitude=snapshot.arp_longitude,
-                        transition_altitude_ft=snapshot.transition_altitude_ft,
-                        transition_level_ft=snapshot.transition_level_ft,
-                        frequencies=snapshot.frequencies,
-                        reporting_points=merge_reporting_points(
-                            snapshot.reporting_points, extra_points
-                        ),
-                        runways=snapshot.runways,
-                        parse_notes=snapshot.parse_notes
-                        + ("VFR reporting points sourced from the ENAIRE VAC chart",),
-                    )
+            if vac_url:
+                notes = snapshot.parse_notes
+                if vac_text:
+                    extra_points = parse_reporting_points_from_vac(vac_text)
+                    if extra_points:
+                        notes = notes + ("VFR reporting points sourced from the ENAIRE VAC chart",)
+                snapshot = Ad2Snapshot(
+                    icao=snapshot.icao,
+                    source_url=snapshot.source_url,
+                    fetched_at_utc=snapshot.fetched_at_utc,
+                    aerodrome_name=snapshot.aerodrome_name,
+                    arp_latitude=snapshot.arp_latitude,
+                    arp_longitude=snapshot.arp_longitude,
+                    transition_altitude_ft=snapshot.transition_altitude_ft,
+                    transition_level_ft=snapshot.transition_level_ft,
+                    frequencies=snapshot.frequencies,
+                    reporting_points=merge_reporting_points(
+                        snapshot.reporting_points,
+                        parse_reporting_points_from_vac(vac_text) if vac_text else (),
+                    ),
+                    runways=snapshot.runways,
+                    parse_notes=notes,
+                    vac_url=vac_url,
+                )
 
         await self.repository.store_snapshot(snapshot)
         return snapshot
 
-    async def _load_vac_text(self, icao: str) -> str | None:
+    async def _load_vac_text(self, icao: str) -> tuple[str | None, str | None]:
+        """Return (vac_pdf_text, vac_url) for the aerodrome's VFR chart."""
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aviation-richdale/1.0",
             "Accept": "application/pdf,*/*",
@@ -564,8 +573,9 @@ class EnaireAd2Service:
                         continue
                     if response.status_code != 200 or not response.content.startswith(b"%PDF"):
                         continue
-                    return await asyncio.to_thread(extract_pdf_text, response.content)
-        return None
+                    text = await asyncio.to_thread(extract_pdf_text, response.content)
+                    return text, url
+        return None, None
 
     async def _discover_document(self, icao: str) -> str:
         if self.document_url_template:
