@@ -14,7 +14,10 @@ attribution map.
 | OpenStreetMap + CARTO | dark basemap raster tiles | © OpenStreetMap contributors (ODbL); tiles © CARTO. Must remain visible in map attribution. |
 | openAIP (openaip.net) | airspace boundary overlay raster tiles | Requires your own free API key and acceptance of openAIP license terms; attribution "&copy; openAIP" kept in-layer. |
 | OpenFlightMaps | optional VFR chart layer if an operator provisions a tile endpoint | Their content terms apply; the platform ships no OFM imagery itself. |
-| ENAIRE / AIS España (enaire.es, ais.enaire.es) | AD 2 aerodrome documents parsed on demand (frequencies, transitions, VFR reporting points) | AIP content is protected aeronautical information; extracts stored locally are for flight preparation reference only, not republication. |
+| ENAIRE / AIS España (enaire.es, aip.enaire.es) | AD 2 aerodrome documents and VAC charts parsed on demand (frequencies, transitions, VFR reporting points) | AIP content is protected aeronautical information; extracts stored locally are for flight preparation reference only, not republication. |
+| ENAIRE Insignia VFR (servais.enaire.es ArcGIS services) | official Spanish VFR airspace chart layer via the local tile proxy (`/api/charts/vfr/tile/...`) | Same ENAIRE aeronautical-information terms; rendered tiles stay on your device for personal reference. |
+| OurAirports Data (davidmegginson.github.io/ourairports-data) | worldwide airport and navaid (VOR/DME/NDB) reference points shown on the map | Public domain; downloaded on demand and cached under `data/cache/ourairports/`. |
+| Esri World Imagery | optional satellite basemap tiles | Attribution "Imagery © Esri, Maxar, Earthstar Geographics" kept in map attribution. |
 | Three.js, MapLibre GL JS, Tailwind CSS, FastAPI ecosystem | frontend/backend libraries under their OSS licenses (MIT/BSD-family) | License headers live in each distribution package. |
 
 ## Privacy posture

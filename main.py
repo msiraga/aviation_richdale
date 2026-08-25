@@ -30,6 +30,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
 import navigation
+from airdata import AirDataError, AirReferenceService, EnaireChartTileProxy
 from enaire import EnaireAipRepository, EnaireAd2Service, EnaireError
 from navigation import (
     LatLon,
@@ -197,6 +198,8 @@ async def lifespan(app: FastAPI):
     app.state.enaire = EnaireAd2Service(
         repository=EnaireAipRepository(db_path=DATA_DIR / "enaire.sqlite"),
     )
+    app.state.airref = AirReferenceService(cache_dir=DATA_DIR / "cache" / "ourairports")
+    app.state.chart_proxy = EnaireChartTileProxy(cache_dir=DATA_DIR / "cache")
     app.state.wmm_model = None
     log.info("engines initialized; data directory ready")
     yield
@@ -662,6 +665,51 @@ async def diagnostics_live():
         log.info("diagnostic magnetic_model failed: %s", exc)
 
     return ok_payload({"diagnostics": results})
+
+
+def _bbox_or_bad(value: str) -> tuple[float, float, float, float]:
+    parts = value.split(",")
+    if len(parts) != 4:
+        raise BadRequest("bbox must be 'south,west,north,east' in decimal degrees")
+    try:
+        south, west, north, east = (float(p) for p in parts)
+    except ValueError as exc:
+        raise BadRequest("bbox values must be numeric") from exc
+    if not (-90 <= south < north <= 90) or not (-180 <= west <= east <= 180):
+        raise BadRequest("bbox out of geographic range")
+    if north - south > 40 or east - west > 40:
+        raise BadRequest("bbox too large; request a smaller region")
+    return south, west, north, east
+
+
+@app.get("/api/airports")
+async def get_airports(bbox: str):
+    south, west, north, east = _bbox_or_bad(bbox)
+    airports = await app.state.airref.airports(south, west, north, east)
+    return ok_payload({"airports": airports, "count": len(airports)})
+
+
+@app.get("/api/navaids")
+async def get_navaids(bbox: str):
+    south, west, north, east = _bbox_or_bad(bbox)
+    navaids = await app.state.airref.navaids(south, west, north, east)
+    return ok_payload({"navaids": navaids, "count": len(navaids)})
+
+
+@app.get("/api/charts/vfr/tile/{zoom}/{x}/{y}.png")
+async def get_vfr_chart_tile(zoom: int, x: int, y: int):
+    if zoom < 5 or zoom > 12:
+        raise BadRequest("chart tiles are served for zoom 5..12")
+    n = 2 ** zoom
+    if not (0 <= x < n and 0 <= y < n):
+        raise BadRequest("tile indices outside the pyramid")
+    payload = await app.state.chart_proxy.tile_png(zoom, x, y)
+    if payload is None:
+        raise ApiError(status_code=502, code="chart_source_error",
+                       message="ENAIRE chart service returned no image for this tile")
+    from fastapi.responses import Response
+    return Response(content=payload, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 if __name__ == "__main__":

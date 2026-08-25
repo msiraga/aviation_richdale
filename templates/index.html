@@ -173,7 +173,12 @@ tailwind.config = {
   <div class="glass pointer-events-auto flex items-center gap-2 px-3 py-2">
     <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
     <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
+    <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">ENAIRE</button>
+    <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
     <span class="font-mono text-[9px] text-slate-500 select-none">{{ build_id }}</span>
+    <div class="h-7 w-px bg-slate-500/20"></div>
+    <button id="fplToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-400/20 transition">FILE FPL</button>
+    <button id="trackExport" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">GPX</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
     <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
@@ -187,6 +192,36 @@ tailwind.config = {
     </div>
   </div>
 </header>
+
+<div id="fplModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="glass w-[640px] max-w-full max-h-[86vh] overflow-y-auto p-5 flex flex-col gap-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">ICAO FPL 2012 Generator</h2>
+      <button id="fplClose" class="chip px-3 py-1 text-xs">CLOSE</button>
+    </div>
+    <p class="text-[10px] leading-relaxed text-slate-400">
+      Builds a standard ICAO FPL 2012 field string from your computed route. Copy it into
+      ICARO / AENA's flight-plan portal, or hand it to ATC — this platform does not transmit
+      flight plans itself.
+    </p>
+    <div class="grid grid-cols-3 gap-2">
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">Callsign</span>
+        <input id="fplCallsign" value="EC-X123" maxlength="7" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">Type / Wake</span>
+        <input id="fplType" value="C172" maxlength="4" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">POB</span>
+        <input id="fplPob" type="number" value="2" min="1" max="99" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">EOBT (UTC)</span>
+        <input id="fplEobt" type="time" value="10:30" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">Alternate</span>
+        <input id="fplAltn" value="LEAL" maxlength="4" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+      <label><span class="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">Endurance h</span>
+        <input id="fplEndur" value="4" class="glass-input w-full px-2 py-1.5 font-mono text-sm"></label>
+    </div>
+    <pre id="fplOutput" class="font-mono text-[12px] leading-relaxed text-emerald-200 bg-black/40 rounded-lg p-3 whitespace-pre-wrap border border-emerald-400/20">(compute a route first)</pre>
+    <button id="fplCopy" class="btn-primary rounded-xl py-2 text-xs uppercase tracking-[0.18em]">Copy FPL message</button>
+  </div>
+</div>
 
 <aside id="sidebar"
        class="sidebar-enter absolute left-4 top-[76px] bottom-4 z-30 w-[380px] max-w-[calc(100vw-2rem)] flex flex-col gap-3 overflow-hidden">
@@ -483,10 +518,10 @@ const map = new maplibregl.Map({
       },
     },
     layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': '#04070f' } },
-      { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.92 } },
+      { id: 'bg', type: 'background', paint: { 'background-color': '#0d1a0d' } },
+      { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.92 }, layout: { visibility: 'none' } },
       { id: 'basemap-light', type: 'raster', source: 'basemapLight', paint: { 'raster-opacity': 0.96 }, layout: { visibility: 'none' } },
-      { id: 'basemap-sat', type: 'raster', source: 'basemapSat', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'none' } },
+      { id: 'basemap-sat', type: 'raster', source: 'basemapSat', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'visible' } },
     ]
   }
 });
@@ -523,6 +558,100 @@ map.on('load', () => {
       layout: { visibility: 'visible' }
     });
   }
+
+  // Official ENAIRE Insignia VFR chart (served through our own tile proxy)
+  map.addSource('enaireChart', {
+    type: 'raster',
+    tiles: [`${location.origin}/api/charts/vfr/tile/{z}/{x}/{y}.png`],
+    tileSize: 512,
+    attribution: '&copy; ENAIRE &mdash; Insignia VFR'
+  });
+  map.addLayer({
+    id: 'enaire-chart-layer', type: 'raster', source: 'enaireChart',
+    paint: { 'raster-opacity': 0.9 },
+    layout: { visibility: 'none' }
+  });
+
+  map.addSource('airports', { type: 'geojson', data: EMPTY_ROUTE_COLLECTION });
+  map.addLayer({
+    id: 'airport-dots', type: 'circle', source: 'airports',
+    paint: {
+      'circle-radius': ['case', ['==', ['get', 'kind'], 'large_airport'], 6,
+                              ['==', ['get', 'kind'], 'medium_airport'], 5, 4],
+      'circle-color': '#67e8f9',
+      'circle-stroke-color': '#0e7490',
+      'circle-stroke-width': 1.4,
+      'circle-opacity': 0.9,
+    },
+    layout: { visibility: 'none' }
+  });
+  map.addLayer({
+    id: 'airport-labels', type: 'symbol', source: 'airports',
+    minzoom: 8.5,
+    layout: {
+      'text-field': ['get', 'ident'],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
+      'text-size': 10,
+      'text-offset': [0, 1.1],
+      'text-anchor': 'top',
+      visibility: 'none',
+    },
+    paint: { 'text-color': '#a5f3fc', 'text-halo-color': '#082f49', 'text-halo-width': 1.2 }
+  });
+
+  map.addSource('navaids', { type: 'geojson', data: EMPTY_ROUTE_COLLECTION });
+  map.addLayer({
+    id: 'navaid-vor', type: 'circle', source: 'navaids',
+    filter: ['==', ['get', 'family'], 'vor'],
+    paint: {
+      'circle-radius': 5.5, 'circle-color': '#38bdf8',
+      'circle-stroke-color': '#e0f2fe', 'circle-stroke-width': 1.6,
+    },
+    layout: { visibility: 'none' }
+  });
+  map.addLayer({
+    id: 'navaid-ndb', type: 'circle', source: 'navaids',
+    filter: ['==', ['get', 'family'], 'ndb'],
+    paint: {
+      'circle-radius': 5, 'circle-color': '#fbbf24',
+      'circle-stroke-color': '#78350f', 'circle-stroke-width': 1.4,
+    },
+    layout: { visibility: 'none' }
+  });
+  map.addLayer({
+    id: 'navaid-labels', type: 'symbol', source: 'navaids',
+    minzoom: 7.5,
+    layout: {
+      'text-field': ['concat', ['get', 'ident'], ['case', ['!=', ['get', 'freq'], ''], ['concat', ' ', ['get', 'freq']], '']],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
+      'text-size': 9.5,
+      'text-offset': [0, 1.15],
+      'text-anchor': 'top',
+      visibility: 'none',
+    },
+    paint: { 'text-color': '#bae6fd', 'text-halo-color': '#0c4a6e', 'text-halo-width': 1.1 }
+  });
+
+  const airportPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px' });
+  map.on('click', 'airport-dots', e => {
+    const f = e.features && e.features[0];
+    if (!f) return;
+    const rec = airportsCache.get(f.properties.ident);
+    if (rec) airportPopup.setLngLat(e.lngLat).setHTML(airportPopupHtml(rec)).addTo(map);
+  });
+  map.on('mouseenter', 'airport-dots', () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', 'airport-dots', () => map.getCanvas().style.cursor = '');
+
+  const navaidPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '240px' });
+  ['navaid-vor', 'navaid-ndb'].forEach(layerId => {
+    map.on('click', layerId, e => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      navaidPopup.setLngLat(e.lngLat).setHTML(navaidPopupHtml(f.properties)).addTo(map);
+    });
+    map.on('mouseenter', layerId, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', layerId, () => map.getCanvas().style.cursor = '');
+  });
 
   map.addSource('route', { type: 'geojson', data: EMPTY_ROUTE });
   map.addLayer({
@@ -602,6 +731,7 @@ map.on('load', () => {
 });
 
 const EMPTY_ROUTE = { type: 'FeatureCollection', features: [] };
+const EMPTY_ROUTE_COLLECTION = EMPTY_ROUTE;
 
 function updateLinkStatus() {
   fetch('/api/health').then(r => r.json()).then(p => {
@@ -724,6 +854,7 @@ form.addEventListener('submit', async (ev) => {
 
   try {
     const result = await api('/api/navigation/log', { method: 'POST', body });
+    lastNavlog = result;
     presentNavLog(result);
     await loadTerrainFor(result);
   } catch (err) {
@@ -1180,6 +1311,10 @@ const GpsManager = (() => {
       });
     }
 
+    gpsPosition = [latitude, longitude];
+    appendTrackPoint(latitude, longitude,
+      position.timestamp ? new Date(position.timestamp).toISOString() : new Date().toISOString());
+
     if (!navigator.onLine) {
       const q = readQueue();
       q.push({ latitude, longitude, accuracy, altitude, heading, speed, timestamp: position.timestamp });
@@ -1234,7 +1369,8 @@ const BASEMAP_CYCLE = [
   { label: 'LIGHT', layer: 'basemap-light', bg: '#cfd8e3' },
   { label: 'SAT', layer: 'basemap-sat', bg: '#0d1a0d' },
 ];
-let basemapIdx = 0;
+let basemapIdx = 2; // SAT is the default: most informative for visual orientation
+$('basemapToggle').textContent = BASEMAP_CYCLE[basemapIdx].label;
 $('basemapToggle').addEventListener('click', () => {
   const prev = BASEMAP_CYCLE[basemapIdx];
   basemapIdx = (basemapIdx + 1) % BASEMAP_CYCLE.length;
@@ -1256,7 +1392,208 @@ $('composerToggle').addEventListener('click', () => {
   composerSidebar.classList.toggle('sidebar-visible', !shown);
 });
 
+function setLayerVisibility(layerId, visible) {
+  if (map.getLayer(layerId)) {
+    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+  }
+}
+
+let chartEsVisible = false;
+$('chartEsToggle').addEventListener('click', () => {
+  chartEsVisible = !chartEsVisible;
+  setLayerVisibility('enaire-chart-layer', chartEsVisible);
+  $('chartEsToggle').style.background = chartEsVisible ? 'rgba(167,139,250,0.25)' : '';
+});
+
+// One chip drives both reference datasets: VOR/DME/NDB symbols + airport dots.
+$('navaidsToggle').addEventListener('click', () => {
+  navaidsLayerVisible = !navaidsLayerVisible;
+  airportsVisible = navaidsLayerVisible;
+  ['navaid-vor', 'navaid-ndb', 'navaid-labels',
+   'airport-dots', 'airport-labels'].forEach(id => setLayerVisibility(id, navaidsLayerVisible));
+  $('navaidsToggle').style.background = navaidsLayerVisible ? 'rgba(56,189,248,0.25)' : '';
+  if (navaidsLayerVisible) refreshReferenceLayers();
+});
+
 window.addEventListener('online', updateLinkStatus);
+
+/* --------------------- Airports / navaids / ENAIRE chart ------------------- */
+
+function currentBbox() {
+  const b = map.getBounds();
+  const sw = b.getSouthWest(), ne = b.getNorthEast();
+  return {
+    south: Math.max(-90, sw.lat), north: Math.min(90, ne.lat),
+    west: Math.max(-180, sw.lng), east: Math.min(180, ne.lng),
+  };
+}
+
+const airportsCache = new Map();   // ident -> record
+let lastNavlog = null;
+let gpsPosition = null;            // latest fix [lat, lon] for radial math
+let airportsVisible = false;
+let navaidsLayerVisible = false;
+
+map.on('moveend', refreshReferenceLayers);
+
+const REF_DEBOUNCE_MS = 400;
+let refTimer = null;
+function refreshReferenceLayers() {
+  clearTimeout(refTimer);
+  refTimer = setTimeout(async () => {
+    if (!navaidsLayerVisible && !airportsVisible) return;
+    const bb = currentBbox();
+    if (bb.north - bb.south > 6 || bb.east - bb.west > 9) return;
+    try {
+      if (airportsVisible) {
+        const res = await api(`/api/airports?bbox=${bb.south},${bb.west},${bb.north},${bb.east}`);
+        setAirportData(res.airports);
+      }
+      if (navaidsLayerVisible) {
+        const res = await api(`/api/navaids?bbox=${bb.south},${bb.west},${bb.north},${bb.east}`);
+        setNavaidData(res.navaids);
+      }
+    } catch (err) { /* reference layers are opportunistic */ }
+  }, REF_DEBOUNCE_MS);
+}
+
+function setAirportData(list) {
+  airportsCache.clear();
+  const features = list.map(a => {
+    airportsCache.set(a.ident, a);
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [a.longitude, a.latitude] },
+      properties: { ident: a.ident, name: a.name, kind: a.type },
+    };
+  });
+  map.getSource('airports').setData({ type: 'FeatureCollection', features });
+}
+
+function setNavaidData(list) {
+  const features = list.map(n => {
+    const family = String(n.type).startsWith('NDB') ? 'ndb' : 'vor';
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [n.longitude, n.latitude] },
+      properties: {
+        ident: n.ident, name: n.name, family,
+        freq: n.frequency_khz ? (n.frequency_khz / 1000).toFixed(2) : '',
+      },
+    };
+  });
+  map.getSource('navaids').setData({ type: 'FeatureCollection', features });
+}
+
+function bearingToDeg(fromLat, fromLon, toLat, toLon) {
+  const φ1 = fromLat * Math.PI / 180, φ2 = toLat * Math.PI / 180;
+  const Δλ = (toLon - fromLon) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function airportPopupHtml(a) {
+  return `<div class="text-[11px] leading-snug" style="color:#e2e8f0">
+    <div class="font-bold text-cyan-200">${a.ident}</div>
+    <div>${a.name}</div>
+    <div class="text-slate-400">${a.kind} · ${a.elevation_ft} ft${a.municipality ? ' · ' + a.municipality : ''}</div>
+    <button onclick="window.__richdaleMetar('${a.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">METAR</button>
+    ${/^LE/.test(a.ident) ? `<button onclick="window.__richdaleCharts('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">AD-2 doc</button>` : ''}
+  </div>`;
+}
+
+function navaidPopupHtml(n) {
+  let radialLine = '';
+  if (gpsPosition) {
+    const radial = bearingToDeg(gpsPosition[0], gpsPosition[1], n.latitude, n.longitude).toFixed(0).padStart(3, '0');
+    radialLine = `<div class="text-sky-300 font-bold">RADIAL FROM YOU: ${radial}°</div>`;
+  }
+  return `<div class="text-[11px] leading-snug" style="color:#e2e8f0">
+    <div class="font-bold text-sky-200">${n.ident} · ${n.type}${n.freq ? ` ${n.freq} MHz` : ''}</div>
+    <div>${n.name}</div>
+    ${radialLine}
+  </div>`;
+}
+
+window.__richdaleMetar = async function (icao) {
+  try {
+    const res = await api('/api/weather/metar', { method: 'POST', body: { icaos: [icao] } });
+    const m = res.reports[0];
+    if (!m) { showToast(`No METAR available for ${icao}.`, 'warn'); return; }
+    showToast(`${icao}: ${m.raw_text} → ${m.flight_category}`, 'info', 10000);
+  } catch (err) { showToast(err.message, 'error'); }
+};
+
+window.__richdaleCharts = async function (icao) {
+  try {
+    const snap = await api(`/api/aip/ad2/${icao}`);
+    window.open(snap.ad2.source_url, '_blank');
+    showToast(`Opened the ENAIRE AD 2 document for ${snap.ad2.icao}.`, 'info');
+  } catch (err) { showToast(`Charts unavailable: ${err.message}`, 'error'); }
+};
+
+/* ------------------------------- Track log -------------------------------- */
+
+const TRACK_KEY = 'richdale_track_v1';
+function readTrack() {
+  try { return JSON.parse(localStorage.getItem(TRACK_KEY) || '[]'); } catch { return []; }
+}
+function appendTrackPoint(lat, lon, isoTime) {
+  const t = readTrack();
+  t.push([Number(lat.toFixed(5)), Number(lon.toFixed(5)), isoTime]);
+  while (t.length > 5000) t.shift();
+  localStorage.setItem(TRACK_KEY, JSON.stringify(t));
+}
+$('trackExport').addEventListener('click', () => {
+  const t = readTrack();
+  if (!t.length) { showToast('Track log is empty — enable GPS and move.', 'warn'); return; }
+  const pts = t.map(p => `<trkpt lat="${p[0]}" lon="${p[1]}"><time>${p[2]}</time></trkpt>`).join('\n');
+  const gpx = `<?xml version="1.0"?>\n<gpx version="1.1" creator="aviation_richdale">\n<trk><name>richdale track</name><trkseg>\n${pts}\n</trkseg></tr>\n</gpx>`;
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'richdale-track.gpx'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ------------------------------ FPL generator ----------------------------- */
+
+$('fplToggle').addEventListener('click', () => {
+  $('fplModal').classList.remove('hidden');
+  buildFpl();
+});
+$('fplClose').addEventListener('click', () => $('fplModal').classList.add('hidden'));
+['fplCallsign','fplType','fplPob','fplEobt','fplAltn','fplEndur'].forEach(id =>
+  $(`#${id}`).addEventListener('input', buildFpl));
+
+function buildFpl() {
+  const out = $('fplOutput');
+  if (!lastNavlog) { out.textContent = '(compute a route first)'; return; }
+  const cs = $('fplCallsign').value.trim().toUpperCase() || 'ECX123';
+  const type = ($('fplType').value.trim().toUpperCase() || 'ZZZZ') + '-L';
+  const eobt = $('fplEobt').value.replace(':', '') || '0000';
+  const dep = (lastNavlog.route && lastNavlog.route[0]) || 'ZZZZ';
+  const arr = (lastNavlog.route && lastNavlog.route[lastNavlog.route.length - 1]) || 'ZZZZ';
+  const altnRaw = $('fplAltn').value.trim().toUpperCase();
+  const altnField = altnRaw ? `${altnRaw}/` : '';
+  const eetMins = Math.round(lastNavlog.totals.ete_min);
+  const eet = `${String(Math.floor(eetMins / 60)).padStart(2, '0')}${String(eetMins % 60).padStart(2, '0')}`;
+  const level = `A${String(Math.round(lastNavlog.cruise_altitude_ft)).padStart(3, '0')}`;
+  const speedKt = `N${Math.round(lastNavlog.tas_kt)}`;
+  const pob = $('fplPob').value || 'TBN';
+  const endurRaw = $('fplEndur').value.trim() || '4';
+  const endurance = endurRaw.includes(':') ? endurRaw : `${endurRaw.padStart(2, '0')}:00`;
+  const dofDate = new Date();
+  const dof = `${String(dofDate.getUTCDate()).padStart(2, '0')}${dofDate.toLocaleString('en-US', { month: 'short' }).toUpperCase()}`;
+  const waypointsText = (lastNavlog.route || []).join(' ');
+  out.textContent =
+    `(FPL-${cs}-IG\n-${type}\n-${level} ${speedKt} DCT ${waypointsText}\n-${altnField}OTHER\n-EOBT/${eobt} DOF/${dof} EET/${eet} PER/C POB/${pob} EETEND/${endurance} RMK/PRIVATE VFR)`;
+}
+$('fplCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('fplOutput').textContent); showToast('FPL copied to clipboard.', 'info'); }
+  catch { showToast('Clipboard blocked — select the text manually.', 'warn'); }
+});
 
 setTimeout(() => {
   map.fitBounds([BOOT.mapBboxSw.slice().reverse(), BOOT.mapBboxNe.slice().reverse()],
