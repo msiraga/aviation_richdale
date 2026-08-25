@@ -298,7 +298,9 @@ tailwind.config = {
   <div class="absolute top-4 right-4 z-10 flex gap-2">
     <button id="earthZoomOut" class="chip px-3 py-1.5 text-sm font-bold" title="zoom out">&#8722;</button>
     <button id="earthZoomIn" class="chip px-3 py-1.5 text-sm font-bold" title="zoom in">&#43;</button>
-    <button id="earthSpin" class="chip px-3 py-1.5 text-xs font-bold">SPIN ON</button>
+    <button id="locateBtn" class="chip px-3 py-1.5 text-xs font-bold text-orange-200 hover:bg-orange-400/20" title="fly back to your itinerary">LOCATE</button>
+    <button id="xrayBtn" class="chip px-3 py-1.5 text-xs font-bold text-cyan-100 hover:bg-cyan-400/20" title="see through the planet to your route">X-RAY</button>
+    <button id="earthSpin" class="chip px-3 py-1.5 text-xs font-bold">SPIN</button>
     <button id="earthClose" class="chip px-3 py-1.5 text-xs font-bold text-cyan-100 hover:bg-cyan-400/20">CLOSE &#10005;</button>
   </div>
   <div class="absolute bottom-4 left-5 right-5 flex justify-between text-[9px] font-mono tracking-widest text-slate-500 pointer-events-none select-none">
@@ -1764,6 +1766,19 @@ $('chartEsToggle').addEventListener('click', () => {
   chartEsVisible = !chartEsVisible;
   setLayerVisibility('enaire-chart-layer', chartEsVisible);
   $('chartEsToggle').style.background = chartEsVisible ? 'rgba(167,139,250,0.25)' : '';
+  if (chartEsVisible) {
+    // ENAIRE renders 512px exports on demand (~2-3s/tile) — say so, then confirm
+    $('chartEsToggle').textContent = 'CHART…';
+    showToast('Loading official ENAIRE VFR chart — a few seconds.', 'info', 3500);
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      $('chartEsToggle').textContent = 'CHART';
+      map.off('idle', finish);
+    };
+    map.on('idle', finish);
+    setTimeout(finish, 20000);   // never leave the button stuck
+  }
 });
 
 // One chip drives both reference datasets: VOR/DME/NDB symbols + airport dots.
@@ -2739,6 +2754,11 @@ const earthView = {
   rotX: -0.35, rotY: 0.6, dist: 2.7,
   dragging: false, lastPX: 0, lastPY: 0, pinchD: 0,
   idleSince: 0, spinOn: true,
+  // cinematic fly-to + x-ray
+  frame: null,          // {rx, ry, d} of the framed itinerary
+  easing: null,         // active ease toward frame
+  xray: false,
+  gratMats: [],
 };
 
 function earthInitOnce() {
@@ -2779,11 +2799,14 @@ function earthInitOnce() {
     dayTex: { value: null },
     nightTex: { value: null },
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
+    uAlpha: { value: 1.0 },   // driven to <1 in X-RAY mode
   };
   globe.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 96), surfaceMat));
+  earthView.surfaceMesh = globe.children[0];
 
   // graticule (visible under the texture too — reads as "instrument", not decoration)
   const gratMat = new THREE.LineBasicMaterial({ color: 0x3ba7ff, transparent: true, opacity: 0.14 });
+  earthView.gratMats.push(gratMat);
   for (let lat = -60; lat <= 60; lat += 30) {
     const pts = [];
     for (let lon = -180; lon <= 180; lon += 4) pts.push(llToVec(lat, lon, 1.002));
@@ -2802,6 +2825,7 @@ function earthInitOnce() {
   const applyShaderSurface = () => {
     const shaderMat = new THREE.ShaderMaterial({
       uniforms: earthView.uniforms,
+      transparent: true,
       vertexShader: `
         varying vec2 vUv; varying vec3 vObjPos;
         void main() {
@@ -2809,7 +2833,8 @@ function earthInitOnce() {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `
-        uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec3 sunDir;
+        uniform sampler2D dayTex; uniform sampler2D nightTex;
+        uniform vec3 sunDir; uniform float uAlpha;
         varying vec2 vUv; varying vec3 vObjPos;
         void main() {
           vec3 n = normalize(vObjPos);
@@ -2820,10 +2845,10 @@ function earthInitOnce() {
           vec3 col = mix(night, day, k);
           float band = smoothstep(0.16, 0.0, abs(d - 0.02));
           col += vec3(0.95, 0.45, 0.15) * band * 0.18;
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(col, uAlpha * mix(0.30, 1.0, k));
         }`,
     });
-    globe.children[0].material = shaderMat;
+    earthView.surfaceMesh.material = shaderMat;
     $('earthLoading').style.display = 'none';
   };
   const maybeApply = () => { if (dayTex && nightTex) applyShaderSurface(); };
@@ -2908,10 +2933,16 @@ function updateEarthRoute() {
 
   // thick amber tube along the true great circles (lines render 1px — useless)
   const curve = new GreatCircleCurve(wps, 0.012);
+  const routeMat = new THREE.MeshBasicMaterial({
+    color: 0xffb703, transparent: true, opacity: 1,
+    depthTest: !earthView.xray,
+    depthWrite: true,
+  });
   earthView.routeLine = new THREE.Mesh(
     new THREE.TubeGeometry(curve, Math.min(720, 90 * (wps.length - 1)), 0.0038, 10, false),
-    new THREE.MeshBasicMaterial({ color: 0xffb703 }),
+    routeMat,
   );
+  earthView.routeLine.renderOrder = earthView.xray ? 10 : 2;
   earthView.globeGroup.add(earthView.routeLine);
 
   for (const wp of wps) {
@@ -2941,10 +2972,33 @@ function updateEarthRoute() {
   earthView.rotX = Math.max(-1.2, Math.min(1.2, -Math.asin(mUnit.y) * 0.85));
   const cx = Math.cos(earthView.rotX), sx = Math.sin(earthView.rotX);
   const x2 = mUnit.x, z2 = mUnit.y * sx + mUnit.z * cx;
-  earthView.rotY = Math.atan2(x2, z2) - Math.PI;
+  const ry = Math.atan2(x2, z2) - Math.PI;
 
   const chord = 2 * Math.sin(Math.max(spanRad, 0.02) / 2);
-  earthView.dist = Math.max(1.08, Math.min(3.4, chord / (2 * Math.tan(42 * 0.33 * Math.PI / 180))));
+  const d = Math.max(1.08, Math.min(3.4, chord / (2 * Math.tan(42 * 0.33 * Math.PI / 180))));
+
+  // remember the framing so LOCATE can always bring you back here
+  earthView.frame = { rx: earthView.rotX, ry: shortestAngle(ry - earthView.rotY) + earthView.rotY, d };
+  easeTo(earthView.frame);
+}
+
+function shortestAngle(a) {
+  return ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+}
+
+// smooth cinematic move toward a frame; any drag/wheel cancels it.
+// Does not own the render loop — callers ensure it is running.
+function easeTo(frame) {
+  if (!earthView.ready || !frame) {
+    if (frame) { earthView.rotX = frame.rx; earthView.rotY = frame.ry; earthView.dist = frame.d; }
+    return;
+  }
+  earthView.easing = { rx: frame.rx, ry: shortestAngle(frame.ry - earthView.rotY) + earthView.rotY, d: frame.d };
+}
+
+function startEarthLoop() {
+  cancelAnimationFrame(earthView.raf);
+  earthFrame();
 }
 
 class GreatCircleCurve extends THREE.Curve {
@@ -3003,10 +3057,15 @@ function sizeEarthRenderer() {
 function bindEarthControls(canvas) {
   const MIN_D = 1.07, MAX_D = 6;
   const clampDist = d => Math.max(MIN_D, Math.min(MAX_D, d));
-  earthView.zoomBy = f => { earthView.dist = clampDist(earthView.dist * f); earthView.idleSince = performance.now(); };
+  earthView.zoomBy = f => {
+    earthView.easing = null;
+    earthView.dist = clampDist(earthView.dist * f);
+    earthView.idleSince = performance.now();
+  };
 
   const pointers = new Map();
   canvas.addEventListener('pointerdown', e => {
+    earthView.easing = null;   // hands-on means hands-on
     pointers.set(e.pointerId, [e.clientX, e.clientY]);
     earthView.idleSince = performance.now();
     if (pointers.size === 1) {
@@ -3045,6 +3104,7 @@ function bindEarthControls(canvas) {
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    earthView.easing = null;
     earthView.dist = clampDist(earthView.dist * Math.exp(e.deltaY * 0.0011));
     earthView.idleSince = performance.now();
   }, { passive: false });
@@ -3061,10 +3121,33 @@ function subsolarPoint(now) {
 function earthFrame() {
   if (!earthView.open) return;
   earthView.raf = requestAnimationFrame(earthFrame);
-  // idle auto-spin
-  if (earthView.spinOn && !earthView.dragging && performance.now() - earthView.idleSince > 4000) {
-    earthView.rotY += 0.0012;
+
+  // ease toward a framing target (fly-in, LOCATE) — any manual input cancels
+  if (earthView.easing && !earthView.dragging && earthView.pinchD === 0) {
+    const e = earthView.easing;
+    earthView.rotY += shortestAngle(e.ry - earthView.rotY) * 0.07;
+    earthView.rotX += (e.rx - earthView.rotX) * 0.07;
+    earthView.dist += (e.d - earthView.dist) * 0.07;
+    if (Math.abs(shortestAngle(e.ry - earthView.rotY)) < 0.004
+        && Math.abs(e.rx - earthView.rotX) < 0.004
+        && Math.abs(e.d - earthView.dist) < 0.004) {
+      earthView.rotX = e.rx; earthView.rotY = e.ry; earthView.dist = e.d;
+      earthView.easing = null;
+    }
+  } else {
+    // idle drift only when there is no itinerary to keep centred — stability first
+    if (earthView.spinOn && !lastNavlog && !earthView.dragging
+        && performance.now() - earthView.idleSince > 4000) {
+      earthView.rotY += 0.0012;
+    }
   }
+
+  // heartbeat pulse on the route tube keeps the eye locked on
+  if (earthView.routeLine) {
+    const t = performance.now() * 0.0022;
+    earthView.routeLine.material.opacity = earthView.xray ? 1 : 0.78 + 0.22 * Math.sin(t);
+  }
+
   const g = earthView.globeGroup;
   g.rotation.set(0, 0, 0);
   g.rotateY(earthView.rotY);
@@ -3084,6 +3167,18 @@ function earthFrame() {
   earthView.renderer.render(earthView.scene, cam);
 }
 
+function setEarthXray(on) {
+  earthView.xray = on;
+  $('xrayBtn').textContent = on ? 'X-RAY ON' : 'X-RAY';
+  $('xrayBtn').style.background = on ? 'rgba(103,232,249,0.25)' : '';
+  if (earthView.uniforms) earthView.uniforms.uAlpha.value = on ? 0.42 : 1.0;
+  for (const m of earthView.gratMats) m.opacity = on ? 0.34 : 0.14;
+  const deep = m => { m.depthTest = !on; m.depthWrite = true; m.needsUpdate = true; };
+  if (earthView.routeLine) deep(earthView.routeLine.material);
+  earthView.wpGroup.children.forEach(ch => { if (ch.material) deep(ch.material); });
+  if (earthView.gpsDot) deep(earthView.gpsDot.material);
+}
+
 $('earthBtn')?.addEventListener('click', openEarthView);
 $('earthBtnHeader')?.addEventListener('click', openEarthView);
 
@@ -3093,9 +3188,20 @@ function openEarthView() {
   earthView.open = true;
   sizeEarthRenderer();
   updateEarthRoute();
-  cancelAnimationFrame(earthView.raf);
-  earthFrame();
+  // cinematic: begin far out and glide down onto the itinerary
+  if (earthView.frame) {
+    earthView.dist = Math.min(5.6, earthView.frame.d + 2.4);
+  }
+  startEarthLoop();
 }
+
+$('locateBtn')?.addEventListener('click', () => {
+  if (!earthView.frame) { showToast('Compute a route first — then LOCATE flies to it.', 'info'); return; }
+  easeTo(earthView.frame);
+  startEarthLoop();
+});
+
+$('xrayBtn')?.addEventListener('click', () => setEarthXray(!earthView.xray));
 
 // live position marker on the globe (single interval, guarded by open state)
 setInterval(() => {
@@ -3112,7 +3218,8 @@ $('earthClose').addEventListener('click', () => {
 
 $('earthSpin').addEventListener('click', () => {
   earthView.spinOn = !earthView.spinOn;
-  $('earthSpin').textContent = earthView.spinOn ? 'SPIN ON' : 'SPIN OFF';
+  $('earthSpin').textContent = earthView.spinOn ? 'SPIN' : 'SPIN OFF';
+  $('earthSpin').style.background = earthView.spinOn ? '' : 'rgba(148,163,184,0.25)';
 });
 
 $('earthZoomIn')?.addEventListener('click', () => earthView.zoomBy?.(0.72));
