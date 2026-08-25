@@ -348,7 +348,10 @@ async def index(request: Request):
         "safety_ceiling_ft": SAFETY_CEILING_FT,
         "build_id": f"b{datetime.fromtimestamp(build_stamp, tz=timezone.utc).strftime('%y%m%d.%H%M')}",
     }
-    return templates.TemplateResponse(request, "index.html", context)
+    response = templates.TemplateResponse(request, "index.html", context)
+    # the UI evolves fast — never let a browser serve yesterday's cockpit
+    response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 @app.get("/api/config")
