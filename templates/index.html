@@ -172,6 +172,7 @@ tailwind.config = {
 
   <div class="glass pointer-events-auto flex items-center gap-2 px-3 py-2">
     <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
+    <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
     <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
@@ -317,7 +318,7 @@ tailwind.config = {
   </section>
 </aside>
 
-<section id="terrainPanel" class="glass absolute right-4 top-[76px] z-20 w-[430px] h-[330px] hidden flex-col">
+<section id="terrainPanel" class="glass absolute right-4 top-[76px] z-20 w-[430px] max-w-[calc(100vw-2rem)] h-[330px] hidden flex-col">
   <header class="flex items-center justify-between px-4 pt-3 pb-2">
     <div>
       <h2 class="text-[12px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Terrain Profile 3D</h2>
@@ -465,10 +466,26 @@ const map = new maplibregl.Map({
         maxzoom: 20,
         attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
       },
+      basemapLight: {
+        type: 'raster',
+        tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'],
+        tileSize: 256,
+        maxzoom: 20,
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      },
+      basemapSat: {
+        type: 'raster',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'
+      },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': '#04070f' } },
       { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.92 } },
+      { id: 'basemap-light', type: 'raster', source: 'basemapLight', paint: { 'raster-opacity': 0.96 }, layout: { visibility: 'none' } },
+      { id: 'basemap-sat', type: 'raster', source: 'basemapSat', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'none' } },
     ]
   }
 });
@@ -1027,7 +1044,15 @@ async function loadTerrainFor(navlog) {
   navlog.legs.forEach(leg => leg.geometry.forEach(([lat, lon], idx) => {
     if (idx % 3 === 0) coords.push([lat, lon]);
   }));
-  if (coords.length > 120) coords.length = 120;
+  if (coords.length > 32) {
+    const stride = coords.length / 32;
+    const slim = [];
+    for (let i = 0; i < 32; i++) {
+      slim.push(coords[Math.min(coords.length - 1, Math.floor(i * stride))]);
+    }
+    coords.length = 0;
+    coords.push(...slim);
+  }
 
   $('terrainPanel').classList.remove('hidden');
   $('terrainPanel').classList.add('flex');
@@ -1202,6 +1227,22 @@ const GpsManager = (() => {
 })();
 
 $('gpsToggle').addEventListener('click', () => GpsManager.toggle());
+
+const BASEMAP_CYCLE = [
+  { label: 'DARK', layer: 'basemap', bg: '#04070f' },
+  { label: 'LIGHT', layer: 'basemap-light', bg: '#cfd8e3' },
+  { label: 'SAT', layer: 'basemap-sat', bg: '#0d1a0d' },
+];
+let basemapIdx = 0;
+$('basemapToggle').addEventListener('click', () => {
+  const prev = BASEMAP_CYCLE[basemapIdx];
+  basemapIdx = (basemapIdx + 1) % BASEMAP_CYCLE.length;
+  const next = BASEMAP_CYCLE[basemapIdx];
+  map.setLayoutProperty(prev.layer, 'visibility', 'none');
+  map.setLayoutProperty(next.layer, 'visibility', 'visible');
+  if (map.getLayer('bg')) map.setPaintProperty('bg', 'background-color', next.bg);
+  $('basemapToggle').textContent = next.label;
+});
 
 const composerSidebar = $('sidebar');
 setTimeout(() => {

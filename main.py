@@ -139,7 +139,7 @@ class NavLogRequest(StrictModel):
 
 
 class TerrainProfileRequest(StrictModel):
-    waypoints: list[list[float]] = Field(min_length=2, max_length=9)
+    waypoints: list[list[float]] = Field(min_length=2, max_length=32)
     cruise_altitude_ft: int = Field(ge=500, le=18000)
 
     def waypoint_pairs(self) -> list[tuple[float, float]]:
