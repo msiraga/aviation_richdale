@@ -26,7 +26,7 @@ import os
 import re
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -489,6 +489,18 @@ class EnaireAd2Service:
         if not force_refresh:
             cached = await self.repository.cached_snapshot(target)
             if cached is not None:
+                if not cached.vac_url:
+                    # snapshots stored before VAC discovery existed lack the URL —
+                    # probe for it cheaply and patch the cache in place
+                    try:
+                        vac_url = await self._discover_vac_url(target)
+                    except httpx.HTTPError as exc:
+                        log.info("VAC URL probe failed for %s: %s", target, exc)
+                        return cached
+                    if vac_url:
+                        patched = dataclass_replace(cached, vac_url=vac_url)
+                        await self.repository.store_snapshot(patched)
+                        return patched
                 return cached
 
         try:
@@ -553,6 +565,33 @@ class EnaireAd2Service:
 
         await self.repository.store_snapshot(snapshot)
         return snapshot
+
+    async def _discover_vac_url(self, icao: str) -> str | None:
+        """Find the VAC chart URL without downloading the full PDF."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aviation-richdale/1.0",
+            "Accept": "application/pdf,*/*",
+        }
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), headers=headers, follow_redirects=True) as client:
+            for base in self.bases:
+                for suffix in ("en", "es"):
+                    url = (
+                        f"{base.rstrip('/')}/contenido_AIP/AD/AD2/{icao}/"
+                        f"LE_AD_2_{icao}_VAC_1_{suffix}.pdf"
+                    )
+                    try:
+                        response = await client.head(url)
+                        if response.status_code == 200:
+                            ctype = (response.headers.get("content-type") or "").lower()
+                            if not ctype or "pdf" in ctype or "octet-stream" in ctype:
+                                return url
+                            # HEAD lied about type — confirm with a tiny ranged GET
+                            probe = await client.get(url, headers={"Range": "bytes=0-1023"})
+                            if probe.status_code in (200, 206) and probe.content.startswith(b"%PDF"):
+                                return url
+                    except httpx.HTTPError:
+                        continue
+        return None
 
     async def _load_vac_text(self, icao: str) -> tuple[str | None, str | None]:
         """Return (vac_pdf_text, vac_url) for the aerodrome's VFR chart."""
