@@ -14,6 +14,9 @@ and fly with official AIP publications, NOTAMs, and avionics. See
 
 ## Quick start
 
+> **Full feature manual:** see [MANUAL.md](MANUAL.md) — every feature, data
+> source, cockpit procedure and troubleshooting step.
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1

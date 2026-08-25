@@ -394,6 +394,10 @@ tailwind.config = {
 
     <!-- VOR tuner -->
     <div id="vorPanel" class="hidden rounded-xl border border-sky-400/25 bg-sky-400/5 px-3 py-2">
+      <div class="flex items-baseline justify-between mb-1">
+        <span id="vorMode" class="text-[9px] font-bold tracking-[0.18em] text-sky-300">TUNED</span>
+        <span id="vorFly" class="hud-num text-2xl font-black text-amber-300">---°</span>
+      </div>
       <div class="flex items-center gap-3">
         <div class="leading-tight">
           <div class="text-[13px] font-extrabold text-sky-200 font-mono" id="vorIdent">---</div>
@@ -557,6 +561,7 @@ tailwind.config = {
     <div id="tab-brief">
       <div id="crosswindSlot" class="mb-3"></div>
       <div id="glareCard" class="hidden glass mb-3 p-3 rounded-xl border border-amber-400/20"></div>
+      <div id="nightCard" class="hidden glass mb-3 p-3 rounded-xl border border-indigo-400/25"></div>
 
       <div class="grid grid-cols-4 gap-2 mb-4">
         <div class="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-2.5 text-center">
@@ -1146,6 +1151,7 @@ form.addEventListener('submit', async (ev) => {
     loadTafTimelines(result);
     loadCloudStrip(result);
     loadGlare(result);
+    loadNightCard(result);
     loadReportingPoints(result);
     loadNotams(result);
     await loadTerrainFor(result);
@@ -1716,6 +1722,7 @@ const GpsManager = (() => {
     }
 
     setStatus('bg-emerald-400 pulse-dot', 'GPS LIVE');
+    showDrBanner(false);
     if (acqNoticeTimer) { clearTimeout(acqNoticeTimer); acqNoticeTimer = null; }
   }
 
@@ -1726,6 +1733,7 @@ const GpsManager = (() => {
       3: 'GPS timeout — restarting the watch automatically.',
     };
     setStatus('bg-rose-500', 'GPS ERR');
+    showDrBanner(true, err.code === 1 ? 'permission denied' : 'no fix');
     showToast(messages[err.code] || 'GPS failure.', 'error', 9000);
     if (err.code === 3 && watching && !window.__richdaleGpsRestarted) {
       // iOS sometimes kills a watch after one timeout — restart it exactly once
@@ -1948,7 +1956,8 @@ function navaidPopupHtml(n) {
     <div class="font-bold text-sky-200">${n.ident} · ${n.type}${n.freq ? ` ${n.freq} MHz` : ''}</div>
     <div>${n.name}</div>
     ${radialLine}
-    ${n.family === 'vor' ? `<button onclick="window.__richdaleTuneVor('${n.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">TUNE VOR</button>` : ''}
+    ${n.family === 'vor' ? `<button onclick="window.__richdaleTuneVor('${n.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">TUNE VOR</button>
+    <button onclick="window.__richdaleDirectVor('${n.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">DIRECT</button>` : ''}
   </div>`;
 }
 
@@ -2492,6 +2501,9 @@ async function pollGroundView() {
       body: { latitude: gpsPosition[0], longitude: gpsPosition[1] },
     });
     groundData = res.nearby;
+    if (groundData && groundData.wind && groundData.wind.from_deg_true !== null) {
+      window.__richdaleWind = { from_deg: groundData.wind.from_deg_true, speed_kt: groundData.wind.speed_kt };
+    }
     renderGroundPanel();
   } catch { /* opportunistic */ }
   finally { setTimeout(() => { groundTimerActive = false; }, 8000); }
@@ -2582,6 +2594,7 @@ function drawGroundCanvas(runways, airport, distanceNm) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (r.le_ident) ctx.fillText(r.le_ident, a[0] - Math.cos(ang) * 26, a[1] - Math.sin(ang) * 26);
     if (r.he_ident) ctx.fillText(r.he_ident, b[0] + Math.cos(ang) * 26, b[1] + Math.sin(ang) * 26);
+    drawCenterlineExtensions(ctx, a, b, scale);
   }
 
   // own aircraft arrow
@@ -2610,9 +2623,10 @@ function drawGroundCanvas(runways, airport, distanceNm) {
 /* ============================== VOR TUNER ================================== */
 
 let vorSelection = null;   // {ident, freq, lat, lon, obs}
-window.__richdaleTuneVor = function (ident) {
-  const rec = navaidsCache.get(ident);
-  if (!rec) return;
+let vorMode = 'OBS';       // 'OBS' classic tracking | 'DIRECT' gps-style to-station
+window.__richdaleVorMode = () => vorMode;
+
+function armVor(rec, mode) {
   const radialFromMe = gpsPosition
     ? bearingToDeg(rec.latitude, rec.longitude, gpsPosition[0], gpsPosition[1])
     : 0;
@@ -2623,9 +2637,23 @@ window.__richdaleTuneVor = function (ident) {
     longitude: rec.longitude,
     obs: Math.round(radialFromMe),
   };
+  vorMode = mode;
   $('vorPanel').classList.remove('hidden');
   $('vorHint').classList.add('hidden');
-  showToast(`Tuned ${rec.ident}${rec.freq ? ` ${rec.freq} MHz` : ''} — OBS set to your current radial.`, 'info');
+  showToast(mode === 'DIRECT'
+    ? `Direct ${rec.ident}${rec.freq ? ` ${rec.freq} MHz` : ''} — just FLY the big amber heading.`
+    : `Tuned ${rec.ident}${rec.freq ? ` ${rec.freq} MHz` : ''} — OBS set to your current radial.`, 'info');
+}
+
+window.__richdaleTuneVor = function (ident) {
+  const rec = navaidsCache.get(ident);
+  if (rec) armVor(rec, 'OBS');
+};
+
+// confusion-free direct-to: no OBS knowledge required
+window.__richdaleDirectVor = function (ident) {
+  const rec = navaidsCache.get(ident);
+  if (rec) armVor(rec, 'DIRECT');
 };
 
 $('vorMinus').addEventListener('click', () => { if (vorSelection) vorSelection.obs = (vorSelection.obs + 355) % 360; updateVorPanel(); });
@@ -2637,25 +2665,42 @@ function updateVorPanel() {
   $('vorFreq').textContent = vorSelection.freq;
   $('vorObs').textContent = `${String(vorSelection.obs).padStart(3, '0')}°`;
   if (!gpsPosition) return;
-  haversineToVor(vorSelection, gpsPosition);
+
   const radialFromStation = bearingToDeg(vorSelection.latitude, vorSelection.longitude, gpsPosition[0], gpsPosition[1]);
-  const distNm = (() => {
-    const R = 3440.065, p1 = gpsPosition[0] * Math.PI / 180, p2 = vorSelection.latitude * Math.PI / 180;
-    const dp = p2 - p1, dl = (vorSelection.longitude - gpsPosition[1]) * Math.PI / 180;
-    const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  })();
+  const bearingToStation = bearingToDeg(gpsPosition[0], gpsPosition[1], vorSelection.latitude, vorSelection.longitude);
+  const distNm = haversineFront(gpsPosition[0], gpsPosition[1], vorSelection.latitude, vorSelection.longitude);
   $('vorDst').textContent = distNm.toFixed(1);
-  // deviation: how far the OBS course sits from the radial we are actually ON
+
+  // deviation + flag (classic CDI semantics)
   let dev = ((vorSelection.obs - radialFromStation + 540) % 360) - 180;
   const needlePct = 50 + Math.max(-1, Math.min(1, dev / 10)) * 46;
   $('vorNeedle').style.left = `${needlePct}%`;
-  // TO/FROM: station lies ahead within ±90° of the OBS reciprocal when flying TO
   let toDev = ((vorSelection.obs + 180 - radialFromStation + 540) % 360) - 180;
-  $('vorFlag').textContent = distNm < 0.3 ? 'ZONE' : (Math.abs(toDev) < 90 ? 'TO' : 'FROM');
-}
+  const toFlag = distNm < 0.3 ? 'ZONE' : (Math.abs(toDev) < 90 ? 'TO' : 'FROM');
+  $('vorFlag').textContent = toFlag;
 
-function haversineToVor() { /* folded into updateVorPanel */ }
+  // the headline number: the heading to FLY right now
+  let dtk, modeTxt;
+  if (vorMode === 'DIRECT') {
+    dtk = bearingToStation;
+    modeTxt = `DIRECT TO ${vorSelection.ident}`;
+  } else {
+    dtk = toFlag === 'TO' ? (vorSelection.obs + 180) % 360 : vorSelection.obs;
+    modeTxt = `TRACK R${String(vorSelection.obs).padStart(3, '0')} · ${toFlag}`;
+  }
+  // wind correction from the last live wind we saw
+  let wcaNote = '';
+  const wind = window.__richdaleWind;
+  if (wind && wind.speed_kt > 2) {
+    const tas = Math.max(45, window.__richdaleGpsSpeedKt || 90);
+    const xwKt = wind.speed_kt * Math.sin((dtk - wind.from_deg) * Math.PI / 180) * -1;
+    const wca = Math.asin(Math.max(-1, Math.min(1, xwKt / tas))) * 180 / Math.PI;
+    dtk += wca;
+    wcaNote = ` · WCA ${wca >= 0 ? '+' : ''}${wca.toFixed(0)}°`;
+  }
+  $('vorFly').textContent = `${String(Math.round(((dtk % 360) + 360) % 360)).padStart(3, '0')}°`;
+  $('vorMode').textContent = modeTxt + wcaNote;
+}
 
 /* ============================ MINI SIX-PACK ================================ */
 
@@ -3321,6 +3366,9 @@ async function pollGuardNow() {
       },
     });
     guard.data = res;
+    if (res.assumptions && res.assumptions.wind) {
+      window.__richdaleWind = { from_deg: res.assumptions.wind.from_deg, speed_kt: res.assumptions.wind.speed_kt };
+    }
     renderGuard();
   } catch (err) { /* keep last good data */ }
 }
@@ -3383,6 +3431,76 @@ window.__richdaleFlyTo = function (brgDeg, distNm) {
   const dLon = (distNm * Math.sin(rad)) / (60 * Math.max(0.2, Math.cos(gpsPosition[0] * Math.PI / 180)));
   map.flyTo({ center: [gpsPosition[1] + dLon, gpsPosition[0] + dLat], zoom: Math.max(map.getZoom(), 11) });
 };
+
+/* ================== NIGHT-LANDING LEGALITY CARD ============================ */
+
+function loadNightCard(navlog) {
+  const card = $('nightCard');
+  try {
+    if (!navlog.legs.length || !navlog.totals || !navlog.totals.ete_min) { card.classList.add('hidden'); return; }
+    const last = navlog.legs[navlog.legs.length - 1];
+    const d = last.geometry[last.geometry.length - 1];
+    const t = sunTimesUTC(d[0], d[1], new Date());
+    if (!t.sunset) { card.classList.add('hidden'); return; }
+    const etaMs = Date.now() + navlog.totals.ete_min * 60000;
+    const minsAfter = Math.round((etaMs - t.sunset) / 60000);
+    const etaTxt = new Date(etaMs).toISOString().substr(11, 5);
+    const sunsetTxt = new Date(t.sunset).toISOString().substr(11, 5);
+    card.classList.remove('hidden');
+    if (minsAfter > 0) {
+      card.innerHTML = `<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-300 mb-1">🌙 Night check · ${last.to}</div>
+        <div class="text-[11px] font-mono text-indigo-100">ETA ${etaTxt}Z is <b class="text-rose-300">${minsAfter} min after</b> sunset (${sunsetTxt}Z) at the destination.</div>
+        <div class="text-[8px] text-slate-500 mt-1">Night VFR requires lit aerodrome + equipment per SERA.5001 — verify before departing on this timing.</div>`;
+    } else {
+      card.innerHTML = `<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-300 mb-1">🌙 Night check · ${last.to}</div>
+        <div class="text-[11px] font-mono text-emerald-200">ETA ${etaTxt}Z lands ${Math.abs(minsAfter)} min before sunset (${sunsetTxt}Z). Daylight margin OK.</div>`;
+    }
+  } catch { card.classList.add('hidden'); }
+}
+
+/* ================== DEAD-RECKON BANNER ON GPS DEGRADATION ================== */
+
+function showDrBanner(on, why) {
+  let el = $('drBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'drBanner';
+    el.className = 'fixed top-14 left-1/2 -translate-x-1/2 z-[55] hidden glass px-4 py-2 rounded-xl border border-amber-400/40';
+    document.body.appendChild(el);
+  }
+  if (!on) { el.classList.add('hidden'); return; }
+  const hdg = window.__richdaleGpsHeadingDeg !== null && window.__richdaleGpsHeadingDeg !== undefined
+    ? `${String(Math.round(window.__richdaleGpsHeadingDeg)).padStart(3, '0')}°` : '---';
+  const gs = Math.round(window.__richdaleGpsSpeedKt || 0);
+  el.classList.remove('hidden');
+  el.innerHTML = `<span class="text-[11px] font-bold text-amber-300">GPS DEGRADED — dead-reckon: HDG ${hdg} · GS ${gs}kt · ${why}</span>`;
+}
+
+/* ================== GROUND VIEW: extended approach centerlines ============= */
+// drawn inside drawGroundCanvas after runway rectangles:
+function drawCenterlineExtensions(ctx, a, b, scale) {
+  // dashed continuation of the runway axis beyond both thresholds (~3 NM)
+  const ext = Math.min(3.0 * scale, 400);
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = 'rgba(253,224,71,0.75)';
+  ctx.lineWidth = 2;
+  for (const [fromPt, dir] of [[a, ang], [b, ang + Math.PI]]) {
+    ctx.beginPath();
+    ctx.moveTo(fromPt[0], fromPt[1]);
+    ctx.lineTo(fromPt[0] + Math.cos(dir) * ext, fromPt[1] + Math.sin(dir) * ext);
+    ctx.stroke();
+    // threshold chevron
+    ctx.beginPath();
+    ctx.moveTo(fromPt[0], fromPt[1]);
+    ctx.lineTo(fromPt[0] + Math.cos(dir - 0.4) * 12, fromPt[1] + Math.sin(dir - 0.4) * 12);
+    ctx.lineTo(fromPt[0] + Math.cos(dir + 0.4) * 12, fromPt[1] + Math.sin(dir + 0.4) * 12);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(253,224,71,0.9)';
+    ctx.fill();
+  }
+  ctx.setLineDash([]);
+}
 
 /* ===================== 2. GLARE COMPASS (sun in eyes) ====================== */
 
