@@ -24,6 +24,30 @@ uvicorn main:app --host 0.0.0.0 --port 8000   # 0.0.0.0 exposes the cockpit to y
 Open `http://<your-ip>:8000` on the cockpit device. The default viewport is the
 Balearic Sea corridor between **Valencia (LEVC)** and **Ibiza (LEIB)**.
 
+### HTTPS for cockpit GNSS (iOS Safari)
+
+iOS only exposes `navigator.geolocation` to secure origins, so live GPS on an
+iPhone needs TLS. Generate a local CA + server certificate covering your LAN
+address:
+
+```bash
+python make_https_cert.py <your-lan-ip>     # writes under data/certs/ (git-ignored)
+```
+
+Then serve over TLS:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8443 \
+  --ssl-certfile data/certs/server.crt.pem --ssl-keyfile data/certs/server.key.pem
+```
+
+On the iPhone: AirDrop `data/certs/ca.crt`, install the profile
+(Settings → Profile Downloaded), then enable full trust for it
+(Settings → General → About → Certificate Trust Settings). Open
+`https://<your-lan-ip>:8443` — the padlock appears and the GPS layer can ask
+for location permission. Remove the profile any time you're done; the CA signs
+nothing but this cockpit.
+
 ## What it does
 
 ### Weather engine (`weather.py`)
