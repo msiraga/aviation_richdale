@@ -852,6 +852,43 @@ class AviationWeatherEngine:
                 )
         return reports
 
+    async def metar_history(self, icao: str, hours: int = 3) -> list[MetarReport]:
+        """Recent observation sequence for one field (trend analysis)."""
+        target = icao.upper().strip()
+        payload = await self._get_json(
+            AWC_METAR_PATH,
+            {"ids": target, "format": "json", "hours": str(max(1, min(hours, 6)))},
+        )
+        if not isinstance(payload, list):
+            raise WeatherServiceError("unexpected METAR history payload from NOAA AWC")
+
+        reports: list[MetarReport] = []
+        for record in sorted(payload, key=lambda r: r.get("obsTime") or 0):
+            if not isinstance(record, dict):
+                continue
+            raw = str(record.get("rawOb") or "").strip()
+            if not raw:
+                continue
+            obs_time = None
+            epoch = record.get("obsTime")
+            if isinstance(epoch, (int, float)):
+                obs_time = datetime.fromtimestamp(epoch, tz=timezone.utc)
+            try:
+                reports.append(
+                    parse_metar_text(
+                        target,
+                        raw,
+                        station_name=record.get("name"),
+                        latitude=_as_float(record.get("lat")),
+                        longitude=_as_float(record.get("lon")),
+                        elevation_m=_as_float(record.get("elev")),
+                        reference_time=obs_time or datetime.now(timezone.utc),
+                    )
+                )
+            except NoUsableObservation:
+                continue
+        return reports
+
     async def latest_tafs(self, icaos: Sequence[str]) -> list[TafReport]:
         ids = ",".join(sorted({i.upper().strip() for i in icaos}))
         if not ids:

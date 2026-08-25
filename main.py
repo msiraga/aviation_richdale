@@ -755,6 +755,98 @@ async def get_reporting_points(icao: str):
     return ok_payload({"points": pts, "count": len(pts), "note": note, "vac_url": snap.vac_url})
 
 
+@app.get("/api/weather/metar/history")
+async def get_metar_history(icao: str, hours: int = 3):
+    reports = await app.state.weather.metar_history(icao, hours)
+    return ok_payload({
+        "observations": [
+            {
+                "observed_at": r.observed_at.isoformat() if r.observed_at else None,
+                "wind_from_deg": r.wind.direction_from_deg_true if r.wind else None,
+                "speed_kt": r.wind.speed_kt if r.wind else None,
+                "gust_kt": r.wind.gust_kt if r.wind else None,
+                "temperature_c": r.temperature_c,
+                "altimeter_hpa": r.altimeter_hpa,
+                "raw": r.raw_text,
+            }
+            for r in reports
+        ],
+        "count": len(reports),
+    })
+
+
+class TrafficRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    radius_nm: float = Field(default=10, ge=1, le=25)
+
+
+OPENSKY_STATES_URL = "https://opensky-network.org/api/states/all"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aviation-richdale/1.0"
+
+
+@app.post("/api/traffic/nearby")
+async def post_traffic_nearby(body: TrafficRequest):
+    """Live ADS-B positions (OpenSky, anonymous). Advisory only — see MANUAL."""
+    import math as _m
+    dlat = body.radius_nm / 60.0
+    dlon = dlat / max(0.2, _m.cos(_m.radians(body.latitude)))
+    params = {
+        "lamin": round(body.latitude - dlat, 4),
+        "lamax": round(body.latitude + dlat, 4),
+        "lomin": round(body.longitude - dlon, 4),
+        "lomax": round(body.longitude + dlon, 4),
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0), headers={"User-Agent": USER_AGENT}) as client:
+        try:
+            response = await client.get(OPENSKY_STATES_URL, params=params)
+            if response.status_code == 429:
+                return ok_payload({"aircraft": [], "note": "Rate limited by OpenSky — retrying later."})
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            log.info("traffic fetch failed: %s", exc)
+            return ok_payload({"aircraft": [], "note": f"Traffic feed unavailable: {exc}"})
+
+    states = payload.get("states") or []
+    aircraft = []
+    for s in states[:60]:
+        # OpenSky state vector: icao24, callsign, origin_country, time_position,
+        # last_contact, lon, lat, baro_alt(m), on_ground, velocity(m/s), true_track, ...
+        try:
+            lon, lat = float(s[5]), float(s[6])
+        except (TypeError, ValueError):
+            continue
+        if s[8]:   # on_ground
+            continue
+        alt_m = s[7] if isinstance(s[7], (int, float)) else (s[13] if len(s) > 13 and isinstance(s[13], (int, float)) else None)
+        vel_ms = s[9] if isinstance(s[9], (int, float)) else None
+        track = s[10] if isinstance(s[10], (int, float)) else None
+        vrate = s[14] if len(s) > 14 and isinstance(s[14], (int, float)) else None
+        aircraft.append({
+            "icao24": s[0],
+            "callsign": (s[1] or "").strip() or s[0],
+            "latitude": lat,
+            "longitude": lon,
+            "altitude_ft": round(alt_m * 3.28084) if alt_m is not None else None,
+            "ground_speed_kt": round(vel_ms * 1.94384) if vel_ms is not None else None,
+            "track_deg": track,
+            "vertical_rate_fpm": round(vrate * 196.85) if vrate is not None else None,
+            "distance_nm": round(_m.hypot(
+                (lat - body.latitude) * 60.0,
+                (lon - body.longitude) * 60.0 * _m.cos(_m.radians(body.latitude)),
+            ), 1),
+        })
+    aircraft.sort(key=lambda a: a["distance_nm"])
+    return ok_payload({
+        "aircraft": aircraft,
+        "count": len(aircraft),
+        "note": "ADS-B coverage only — aircraft without transponders or below coverage are INVISIBLE.",
+    })
+
+
 @app.get("/api/notam")
 async def get_notams(bbox: str):
     south, west, north, east = _bbox_or_bad(bbox)

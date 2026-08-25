@@ -20,7 +20,7 @@ from, how it fails honestly, and how to use it in the cockpit.
    - BRIEF · WEATHER · NOTAMS · LOG
 5. [Map layers](#5-map-layers)
 6. [Navigation aids](#6-navigation-aids)
-   - VOR tuner & DIRECT mode · Reporting Point Copilot · Ground view
+   - VOR tuner & DIRECT mode · Reporting Point Copilot · Ground view · **FINAL approach mode** · Traffic advisory
 7. [Safety systems](#7-safety-systems)
    - Guardian · Glare Compass · Night check · Terrain collision banner ·
      Dead-reckon banner · SOS mode
@@ -207,8 +207,68 @@ answers "which end do I ask for?" while taxiing.
 Taxiway letters are deliberately absent — they only exist in ENAIRE's printed
 ADG diagram, and we won't invent geometry. The panel links to the AD-2.
 
-Airport popups add three buttons: **METAR** (decoded latest), **AD-2 doc**
-(full ENAIRE document), **VAC chart** (the VFR arrival/departure chart itself).
+Airport popups add buttons: **METAR** (decoded latest), **AD-2 doc** (full
+ENAIRE document), **VAC chart** (the VFR arrival/departure chart itself) and
+**SET FINAL** — which arms the approach mode below for the wind-favoured end.
+
+### 6.4 FINAL — virtual PAPI & approach guidance
+
+Select a runway three ways:
+
+* Airport popup → **SET FINAL** (picks the end with the best wind automatically)
+* Ground view header → **SET FINAL**
+* FLY HUD → **FINAL** (nearest field, best end)
+
+The right-hand panel then gives, updated twice a second from live GPS:
+
+* **Virtual PAPI** — four simulated lights that behave exactly like the
+  physical bar: white above your published path angle (3° default), red below,
+  transitioning one light at a time. Next to them, your *actual* glidepath
+  angle and HAT (height above threshold).
+* **Glidepath profile** — a side-view strip: ideal 3° line, threshold at the
+  right edge, and your position dot sliding down the slope.
+* **Steering line** — TRACK (runway course) vs **FLY** (course with live wind
+  drift correction applied) plus crosswind component with L/R side.
+* **Voice callouts** — tap ENABLE VOICE CALLOUTS once (this also unlocks iOS
+  speech). You get *"five / three / two / one miles"*, *"one thousand"*,
+  *"five hundred"*, *"two hundred"* and *"short final, check runway"*.
+  Low-height calls are **suppressed automatically whenever GPS vertical
+  accuracy is worse than ±12 m** — the panel shows the live accuracy figure so
+  you know why it went quiet.
+* **Landing performance card** — enter your POH landing distance once. The app
+  computes density altitude from the field's METAR temperature (+10 % per
+  1,000 ft DA), adjusts for headwind/tailwind, applies your safety multiplier
+  and compares required distance against available runway length. Labelled
+  honestly as rules-of-thumb, not certified tables.
+* **Dashed green centreline on the map** from 8 NM out to the threshold.
+
+What this is NOT: an ILS. There is no ground station, no certified receiver,
+and no integrity guarantee — it is geometry from GPS against published data,
+presented with PAPI semantics you already know how to read.
+
+### 6.5 Camera view — experimental, non-conformal
+
+CAMERA VIEW inside the FINAL panel opens the rear camera full-screen and
+overlays the computed runway silhouette (projected from your distance,
+crosstrack and height) plus the centreline dashes and aim ring.
+
+This is deliberately labelled **EXPERIMENTAL · NON-CONFORMAL**: the overlay is
+not registered to the real horizon through device attitude, it assumes a level
+aircraft aligned roughly with the runway. It is a situational aid to help you
+*find* the runway visually, never a substitute for looking outside.
+
+### 6.6 Traffic advisory (TRF)
+
+The TRF chip polls OpenSky's public ADS-B feed every 30 s for transponding
+aircraft within 10 NM, drawing rose-coloured dots with callsign/altitude, and
+raises an alert + vibration when any aircraft is predicted within ¾ NM of you
+within 60 s at similar altitude.
+
+Read the chip's own tooltip: this sees **only** aircraft that transmit ADS-B
+*and* sit within ground-station coverage — typical low-level VFR traffic and
+most gliders are invisible. It is a second pair of eyes, never a replacement
+for look-out, and degrades silently (a rate-limit or feed outage just shows no
+dots rather than false reassurance).
 
 ---
 
@@ -319,6 +379,7 @@ route exists.
 | VFR chart tiles | ENAIRE ArcGIS export proxy | disk, PNG-verified | blank layer, honest toast |
 | AD-2/VAC docs + reporting points | ENAIRE AIP PDFs | SQLite, 84 h TTL, stale-fallback | *"showing data cached N h ago"* note |
 | NOTAMs | ENAIRE FeatureServer | 300 s bbox cache | error toast |
+| Traffic | OpenSky public ADS-B feed | none (30 s poll) | silent — no dots, no false comfort |
 | Radar | RainViewer public API | 5 min frames | toast |
 | Magnetic variation | WMM2020 (transliterated, NOAA test vectors pass 100 %) | n/a | n/a |
 | Solar position | NOAA solar algorithm | n/a | n/a |
@@ -342,6 +403,16 @@ track file; there is no telemetry, no accounts, no third-party analytics.
   real winds-aloft integration is future work.
 * **Reporting points** appear only for airports whose VAC text parsed cleanly;
   the API states the gap explicitly.
+* **FINAL mode is visual guidance, not precision navigation aid.** No ILS/GS
+  integrity, and GPS vertical error (±3–8 m) dwarfs the decision height near
+  touchdown — which is why low callouts suppress themselves there.
+* **Camera view** overlays are non-conformal estimates assuming level flight;
+  they are not synthetic vision in the certified sense.
+* **Traffic** sees only ADS-B participants within coverage — treat as
+  supplementary to eyes and radio.
+* Windshear/microburst alerting and radar-altimeter flare cueing are
+  physically out of reach for a browser device with no air data or radio
+  altimeter; the app does not pretend otherwise.
 * **Earth view** is functional but still being polished (postponed by choice).
 * The app is decision support. It is not certified equipment; cross-check
   against official sources per your regulator's rules.
@@ -368,5 +439,6 @@ track file; there is no telemetry, no accounts, no third-party analytics.
 
 ENAIRE (charts, AIP, NOTAMs) · OurAirports (David Megginson, public domain) ·
 NOAA AWC (METAR/TAF) · Open-Meteo (GFS winds/clouds) · AWS Terrain Tiles
-(SRTM) · RainViewer · Esri World Imagery · MapLibre GL · Three.js.
+(SRTM) · RainViewer · Esri World Imagery · OpenSky Network (ADS-B) ·
+MapLibre GL · Three.js.
 Full attributions in `NOTICE.md`. Licensed per repository root.

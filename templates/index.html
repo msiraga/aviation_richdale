@@ -210,6 +210,11 @@ tailwind.config = {
   #groundCanvas { width: 100%; height: 150px; display: block; border-radius: 10px; background: rgba(2,8,20,.55); }
   #guardPanel { position: absolute; left: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; }
   #guardPanel.show { display: block; }
+  #finalPanel { position: absolute; right: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; }
+  #finalPanel.show { display: block; }
+  .papi-light { width: 18px; height: 26px; border-radius: 5px; background: #475569; border: 1px solid rgba(255,255,255,.15); transition: background .2s; }
+  .papi-light.on-white { background: #f8fafc; box-shadow: 0 0 10px rgba(248,250,252,.8); }
+  .papi-light.on-red { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,.8); }
   .wx-dot { width: 9px; height: 9px; border-radius: 9999px; display: inline-block; margin-right: 6px; }
 
   /* wind advice card inside results */
@@ -258,6 +263,7 @@ tailwind.config = {
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
     <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RAIN</button>
     <button id="rpToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition" title="VFR entry/exit reporting points from ENAIRE VAC charts">RP</button>
+    <button id="trafficToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-rose-100 hover:bg-rose-400/20 transition" title="ADS-B traffic via OpenSky — coverage-limited advisory">TRF</button>
     <button id="earthBtnHeader" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" title="3D Earth with great-circle route">&#127758;</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
@@ -315,12 +321,54 @@ tailwind.config = {
   <div id="earthLoading" class="absolute inset-0 hidden place-items-center text-xs tracking-[0.3em] text-slate-500 select-none">LOADING EARTH&hellip;</div>
 </div>
 
+<div id="finalPanel" class="glass p-3">
+  <div class="flex items-center justify-between mb-1.5">
+    <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">FINAL · <span id="finIdent">—</span></span>
+    <button id="finalClose" class="chip px-2 py-0.5 text-[9px]">END</button>
+  </div>
+
+  <div class="flex items-center justify-center gap-2 my-2">
+    <span class="papi-light" data-i="0"></span><span class="papi-light" data-i="1"></span>
+    <span class="papi-light" data-i="2"></span><span class="papi-light" data-i="3"></span>
+    <span class="ml-2 hud-num text-lg font-extrabold text-white" id="finAngle">--.-°</span>
+  </div>
+  <div class="text-[8px] tracking-widest text-slate-500 -mt-1 mb-2 text-center">VIRTUAL PAPI · <span id="finHat">HAT ---</span> · <span id="finAcc">±--m</span></div>
+
+  <canvas id="gsCanvas" width="560" height="220" style="width:100%;height:110px;border-radius:10px;background:rgba(2,8,20,.55)"></canvas>
+
+  <div class="flex justify-between mt-1.5 text-[11px] font-mono">
+    <span class="text-slate-400">TRACK <b class="text-cyan-200" id="finTrack">---°</b></span>
+    <span class="text-slate-400">FLY <b class="text-amber-300" id="finFly">---°</b></span>
+    <span class="text-slate-400">XW <b class="text-white" id="finXw">--</b></span>
+    <span class="text-slate-400">DST <b class="text-emerald-200" id="finDist">--.-</b></span>
+  </div>
+
+  <button id="audioBtn" class="chip w-full mt-2 py-1.5 text-[10px] font-bold tracking-widest">ENABLE VOICE CALLOUTS</button>
+  <button id="camBtn" class="chip w-full mt-1.5 py-1.5 text-[10px] font-bold tracking-widest text-cyan-200">CAMERA VIEW (EXPERIMENTAL)</button>
+
+  <details class="mt-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+    <summary class="text-[9px] tracking-widest text-slate-400 cursor-pointer select-none">LANDING PERF (POH)</summary>
+    <label class="block mt-1.5 text-[9px] font-mono text-slate-400">POH LDG DIST M
+      <input id="pohDist" type="number" min="50" step="10" class="w-full bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
+    <label class="block mt-1 text-[9px] font-mono text-slate-400">SAFETY MULT ×<input id="pohMult" type="number" step="0.05" value="1.40" class="w-14 bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
+    <div id="perfOut" class="mt-1.5 text-[10px] font-mono"></div>
+  </details>
+
+  <div class="text-[8px] text-slate-500 mt-1.5 leading-snug">Visual guidance only — not an ILS. Vertical accuracy degrades near the ground: low callouts auto-suppress when unreliable.</div>
+</div>
+
+<div id="camOverlay" class="hidden fixed inset-0 z-[58] bg-black">
+  <video id="camVideo" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+  <canvas id="synthCanvas" width="800" height="600" class="absolute inset-0 w-full h-full"></canvas>
+  <div class="absolute top-3 left-1/2 -translate-x-1/2 chip px-4 py-1.5 text-[10px] font-extrabold tracking-[0.25em] text-rose-300 border-rose-400/50">EXPERIMENTAL &middot; NON-CONFORMAL VIEW</div>
+  <button id="camExit" class="chip absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-2 text-xs font-bold">EXIT CAMERA</button>
+</div>
+
 <div id="guardPanel" class="glass p-3">
   <div class="flex items-center justify-between mb-1.5">
     <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">Guardian · engine-out options</span>
     <button id="guardClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
-  </div>
-  <div class="flex items-center gap-2 mb-2 text-[9px] font-mono text-slate-400">
+  </div>  <div class="flex items-center gap-2 mb-2 text-[9px] font-mono text-slate-400">
     <label>RATIO <input id="glideRatio" type="number" min="3" max="25" step="0.5" class="w-10 bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
     <label>BEST GLD KT <input id="glideKt" type="number" min="35" max="140" step="1" class="w-12 bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
   </div>
@@ -350,7 +398,10 @@ tailwind.config = {
 <div id="groundPanel" class="glass p-3">
   <div class="flex items-center justify-between mb-1.5">
     <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Ground · <span id="gpIdent">—</span></div>
-    <button id="gpClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
+    <div class="flex gap-1">
+      <button id="gpFinal" class="chip px-2 py-0.5 text-[9px]">SET FINAL</button>
+      <button id="gpClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
+    </div>
   </div>  <canvas id="groundCanvas"></canvas>
   <div id="gpRows" class="mt-2 space-y-1 max-h-[150px] overflow-y-auto text-[10px] font-mono"></div>
   <div class="mt-1.5 text-[8px] leading-snug text-slate-500">
@@ -433,6 +484,7 @@ tailwind.config = {
     <div id="hudRp" class="hidden mt-1.5 text-[10px] font-mono text-violet-200"></div>
     <div class="flex gap-2 mt-2">
       <button id="hudGuard" class="chip flex-1 py-1.5 text-[10px] font-bold text-rose-200">GUARD</button>
+      <button id="hudFinal" class="chip flex-1 py-1.5 text-[10px] font-bold text-emerald-200">FINAL</button>
       <button id="hudSos" class="chip flex-1 py-1.5 text-[10px] font-extrabold text-rose-300">SOS</button>
     </div>
   </div>
@@ -1943,7 +1995,8 @@ function airportPopupHtml(a) {
     <div class="text-slate-400">${a.kind} · ${a.elevation_ft} ft${a.municipality ? ' · ' + a.municipality : ''}</div>
     <button onclick="window.__richdaleMetar('${a.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">METAR</button>
     ${/^LE/.test(a.ident) ? `<button onclick="window.__richdaleCharts('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">AD-2 doc</button>
-    <button onclick="window.__richdaleVac('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">VAC chart</button>` : ''}
+    <button onclick="window.__richdaleVac('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">VAC chart</button>
+    <button onclick="window.setFinalBest('${a.ident}')" style="margin-top:6px;margin-left:4px" class="chip px-2 py-0.5 text-[10px]">SET FINAL</button>` : ''}
   </div>`;
 }
 
@@ -2490,6 +2543,10 @@ function setCorridor(on) {
 let groundTimerActive = false, groundData = null;
 
 $('gpClose')?.addEventListener('click', () => $('groundPanel').classList.remove('show'));
+$('gpFinal')?.addEventListener('click', () => {
+  const icao = ($('gpIdent').textContent || '').split(' ')[0];
+  if (/^[A-Z]{4}$/.test(icao)) setFinalBest(icao);
+});
 
 async function pollGroundView() {
   if (groundTimerActive) return;
@@ -3730,6 +3787,412 @@ $('sosCopy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('sosPos').textContent); showToast('Position copied.', 'info'); }
   catch { showToast('Copy blocked by browser.', 'warn'); }
 });
+
+/* ==================== FINAL APPROACH MODE (Tier-1 pack) ==================== */
+
+const finalState = {
+  active: false, sel: null,      // {icao, end, thrLat, thrLon, headingT, elevFt, lengthM, angle}
+  audio: false, fired: {},
+  pohDist: parseFloat(localStorage.getItem('richdalePoh') || '0'),
+};
+$('pohDist').value = finalState.pohDist || '';
+
+window.__richdaleSetFinal = function (cfg) {
+  finalState.sel = {
+    icao: cfg.icao, end: cfg.end,
+    thrLat: cfg.thrLat, thrLon: cfg.thrLon,
+    headingT: cfg.headingT, elevFt: cfg.elevFt ?? 0,
+    lengthM: cfg.lengthM ?? 0, surface: cfg.surface || '',
+    angle: cfg.angle || 3.0,
+  };
+  finalState.fired = {};
+  finalState.active = true;
+  $('finalPanel').classList.add('show');
+  $('finIdent').textContent = `${cfg.icao} RWY ${cfg.end}`;
+  drawFinalMapLine();
+  showToast(`FINAL armed for ${cfg.icao} RWY ${cfg.end} — ${finalState.sel.angle.toFixed(1)}° path.`, 'info');
+};
+window.setFinalBest = setFinalBest;
+
+// best wind-favoured end for an airport (uses the ground dataset)
+async function setFinalBest(icao) {
+  const a = airportsCache.get(icao);
+  if (!a) { showToast(`${icao}: airport not in loaded set.`, 'warn'); return; }
+  try {
+    const res = await api('/api/ground/nearby', {
+      method: 'POST', body: { latitude: a.latitude, longitude: a.longitude },
+    });
+    if (!res.nearby) { showToast('No runway geometry for this field.', 'warn'); return; }
+    let bestEnd = null;
+    for (const r of res.nearby.runways) {
+      for (const side of ['le', 'he']) {
+        if (!r[`${side}_ident`] || r[`${side}_heading_t`] === null) continue;
+        const hw = r[`${side}_headwind_kt`], xw = r[`${side}_crosswind_kt`];
+        const score = (hw ?? -99) * 2 - (xw ?? 99);
+        if (!bestEnd || score > bestEnd.score) {
+          bestEnd = { score, end: r[`${side}_ident`], headingT: r[`${side}_heading_t`],
+                      thrLat: r[`${side}_lat`], thrLon: r[`${side}_lon`],
+                      lengthM: r.length_m, surface: r.surface };
+        }
+      }
+    }
+    if (!bestEnd) { showToast('No usable runway data.', 'warn'); return; }
+    window.__richdaleSetFinal({
+      icao, end: String(bestEnd.end).replace(/^0/, ''),
+      thrLat: bestEnd.thrLat, thrLon: bestEnd.thrLon,
+      headingT: bestEnd.headingT, elevFt: a.elevation_ft ?? 0,
+      lengthM: bestEnd.lengthM, surface: bestEnd.surface,
+    });
+  } catch (err) { showToast(`Final setup failed: ${err.message}`, 'error'); }
+}
+
+function drawFinalMapLine() {
+  const s = finalState.sel;
+  if (!map.getSource('finLine')) {
+    map.addSource('finLine', { type: 'geojson', data: EMPTY_ROUTE });
+    map.addLayer({
+      id: 'fin-line', type: 'line', source: 'finLine',
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': '#34d399', 'line-width': 3, 'line-dasharray': [3, 2] },
+    }, 'airport-dots');
+  }
+  // inbound line from 8 NM out to threshold
+  const brgRecip = ((s.headingT + 180) % 360) * Math.PI / 180;
+  const outLat = s.thrLat + Math.cos(brgRecip) * 8 / 60;
+  const outLon = s.thrLon + Math.sin(brgRecip) * 8 / (60 * Math.max(0.2, Math.cos(s.thrLat * Math.PI / 180)));
+  map.getSource('finLine').setData({
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [[outLon, outLat], [s.thrLon, s.thrLat]] },
+      properties: {} }],
+  });
+  setLayerVisibility('fin-line', true);
+}
+
+function computeFinalMetrics() {
+  const s = finalState.sel;
+  if (!s || !gpsPosition) return null;
+  const distNm = haversineFront(gpsPosition[0], gpsPosition[1], s.thrLat, s.thrLon);
+  const hatFt = (lastKnownAltFt !== null ? lastKnownAltFt : 0) - s.elevFt;
+  const distFt = distNm * 6076;
+  const gsAngle = distFt > 100 ? Math.atan2(hatFt, distFt) * 180 / Math.PI : NaN;
+  // crosstrack from centreline
+  const brgToThr = bearingToDeg(gpsPosition[0], gpsPosition[1], s.thrLat, s.thrLon);
+  const offCourse = ((brgToThr - s.headingT + 540) % 360) - 180;
+  const xtkNm = Math.abs(offCourse) > 90 ? distNm : distNm * Math.sin(offCourse * Math.PI / 180);
+  const wind = window.__richdaleWind;
+  let xwKt = 0, flyHdg = s.headingT;
+  if (wind && wind.speed_kt > 0) {
+    xwKt = wind.speed_kt * Math.sin((s.headingT - wind.from_deg) * Math.PI / 180);
+    const tas = Math.max(45, window.__richdaleGpsSpeedKt || 90);
+    flyHdg += Math.asin(Math.max(-1, Math.min(1, -xwKt / tas))) * 180 / Math.PI;
+  }
+  return { distNm, hatFt, gsAngle, xtkNm, offCourse, xwKt, flyHdg: ((flyHdg % 360) + 360) % 360 };
+}
+
+function renderPapi(gsAngle) {
+  const s = finalState.sel;
+  document.querySelectorAll('.papi-light').forEach(el => {
+    const i = parseInt(el.dataset.i, 10);
+    const lightAngle = s.angle + [-0.35, -0.12, 0.12, 0.35][i];
+    el.className = 'papi-light ' + (gsAngle >= lightAngle ? 'on-white' : 'on-red');
+  });
+}
+
+function drawGsProfile(m) {
+  const c = $('gsCanvas'), ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  const maxNm = 8, maxFt = maxNm * 6076 * Math.tan(finalState.sel.angle * Math.PI / 180) / 3.28;
+  const X = nm => c.width - (nm / maxNm) * (c.width - 30) - 15;     // threshold at right
+  const Y = ft => c.height - 24 - (ft / (maxFt * 1.25)) * (c.height - 40);
+  // ideal path
+  ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(maxNm), Y(maxFt)); ctx.stroke();
+  // runway strip
+  ctx.fillStyle = 'rgba(148,163,184,.8)';
+  ctx.fillRect(X(0) - 6, c.height - 22, 10, 4);
+  ctx.font = '18px system-ui'; ctx.fillStyle = '#94a3b8';
+  ctx.textAlign = 'right';
+  ctx.fillText('THR', X(0), c.height - 6);
+  ctx.fillText(`${maxNm}NM`, X(maxNm) + 14, c.height - 6);
+  if (m && m.distNm <= maxNm && m.hatFt > -200) {
+    const px = X(Math.max(0, m.distNm)), py = Y(Math.max(0, m.hatFt));
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.beginPath(); ctx.moveTo(px, c.height - 20); ctx.lineTo(px, py); ctx.stroke();
+    ctx.fillStyle = m.gsAngle >= finalState.sel.angle ? '#f8fafc' : '#ef4444';
+    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText(`IDEAL ${finalState.sel.angle.toFixed(1)}°`, 16, 20);
+}
+
+/* ---- voice callouts ---- */
+function speak(text) {
+  if (!finalState.audio || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05; u.lang = 'en-GB'; u.volume = 1;
+  speechSynthesis.speak(u);
+}
+function checkCallouts(m) {
+  if (!m) return;
+  const F = finalState.fired, d = m.distNm, hat = m.hatFt;
+  const sayOnce = (key, cond, txt) => {
+    if (cond && !F[key]) { F[key] = true; speak(txt); }
+    if (!cond && F[key] && key.startsWith('nm')) { /* re-arm when going back out */ }
+  };
+  sayOnce('nm5', d <= 5.02 && d > 4.9, 'five miles');
+  sayOnce('nm3', d <= 3.02 && d > 2.9, 'three miles');
+  sayOnce('nm2', d <= 2.02 && d > 1.9, 'two miles');
+  sayOnce('nm1', d <= 1.02 && d > 0.9, 'one mile');
+  const accOk = (lastAltAcc == null) || (lastAltAcc < 12);
+  if (accOk) {
+    sayOnce('agl1000', hat <= 1050 && hat >= 950, 'one thousand');
+    sayOnce('agl500', hat <= 520 && hat >= 480, 'five hundred');
+    if (hat <= 220 && hat >= 180) sayOnce('agl200', true, 'two hundred');
+    sayOnce('short', d < 0.30, 'short final. check runway');
+  }
+}
+let lastAltAcc = null;
+
+/* ---- master loop ---- */
+setInterval(() => {
+  if (!finalState.active) return;
+  const m = computeFinalMetrics();
+  if (!m) return;
+  renderPapi(Number.isNaN(m.gsAngle) ? -99 : m.gsAngle);
+  $('finAngle').textContent = Number.isNaN(m.gsAngle) ? '--.-°' : `${m.gsAngle.toFixed(1)}°`;
+  $('finHat').textContent = `HAT ${Math.max(0, Math.round(m.hatFt))}ft`;
+  $('finAcc').textContent = `±${lastAltAcc != null ? Math.round(lastAltAcc * 3.28) : '--'}m`;
+  $('finTrack').textContent = `${String(Math.round(finalState.sel.headingT)).padStart(3, '0')}°`;
+  $('finFly').textContent = `${String(Math.round(m.flyHdg)).padStart(3, '0')}°`;
+  $('finXw').textContent = `${Math.abs(m.xwKt).toFixed(0)}${m.xwKt >= 0 ? 'L' : 'R'}kt`;
+  $('finDist').textContent = `${m.distNm.toFixed(1)}nm`;
+  drawGsProfile(m);
+  checkCallouts(m);
+}, 500);
+
+// capture altitude accuracy whenever we see it
+navigator.geolocation && navigator.geolocation.watchPosition(
+  p => { lastAltAcc = p.coords.altitude_accuracy ?? null; },
+  () => {}, { enableHighAccuracy: true, maximumAge: 4000 });
+
+$('finalClose').addEventListener('click', () => {
+  finalState.active = false;
+  $('finalPanel').classList.remove('show');
+  if (map.getLayer('fin-line')) setLayerVisibility('fin-line', false);
+});
+$('hudFinal').addEventListener('click', () => {
+  if (finalState.active) { $('finalPanel').classList.toggle('show'); return; }
+  // nearest airport with geometry → best wind end
+  if (!gpsPosition) { showToast('GPS needed to pick the nearest runway.', 'warn'); return; }
+  api('/api/ground/nearby', {
+    method: 'POST',
+    body: { latitude: gpsPosition[0], longitude: gpsPosition[1] },
+  }).then(res => {
+    if (res.nearby) setFinalBest(res.nearby.airport.ident);
+    else showToast('No airport within ground-view range.', 'warn');
+  }).catch(e => showToast(`Final setup failed: ${e.message}`, 'error'));
+});
+$('camBtn')?.addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }, audio: false,
+    });
+    $('camVideo').srcObject = stream;
+    $('camOverlay').classList.remove('hidden');
+    drawSynthSilhouette();
+  } catch (err) { showToast(`Camera unavailable: ${err.message}`, 'error'); }
+});
+$('audioBtn').addEventListener('click', () => {
+  finalState.audio = !finalState.audio;
+  $('audioBtn').textContent = finalState.audio ? 'VOICE ON' : 'ENABLE VOICE CALLOUTS';
+  $('audioBtn').style.background = finalState.audio ? 'rgba(52,211,153,0.25)' : '';
+  if (finalState.audio) speak('Voice callouts enabled.');
+});
+
+/* ---- landing performance card (rules-of-thumb, POH baseline) ---- */
+['pohDist', 'pohMult'].forEach(id => $(id).addEventListener('input', updatePerfCard));
+function updatePerfCard() {
+  const out = $('perfOut');
+  const base = parseFloat($('pohDist').value) || 0;
+  localStorage.setItem('richdalePoh', String(base));
+  const mult = parseFloat($('pohMult').value) || 1.4;
+  if (!base || !finalState.sel) { out.textContent = ''; return; }
+  const wind = window.__richdaleWind;
+  const obs = window.__richdaleMetarTemp, elevM = finalState.sel.elevFt * 0.3048;
+  const isaC = 15 - 2 * (elevM / 1000);
+  let daNote = 'DA needs METAR temperature.';
+  let factor = 1;
+  if (obs !== undefined && obs !== null) {
+    const daM = elevM + 118.8 * (obs - isaC);
+    const daFt = daM * 3.28084;
+    factor = 1 + Math.max(0, daFt) / 1000 * 0.10;   // +10% per 1000 ft DA
+    daNote = `DA ${Math.round(daFt).toLocaleString()} ft`;
+  }
+  let windNote = '';
+  if (wind && wind.speed_kt > 0) {
+    const head = wind.speed_kt * Math.cos((finalState.sel.headingT - wind.from_deg) * Math.PI / 180);
+    factor *= Math.max(0.5, 1 - Math.min(head, 15) * 0.05 + (head < 0 ? Math.abs(head) * 0.10 : 0));
+    windNote = ` · head ${head.toFixed(0)}kt`;
+  }
+  const req = base * mult * factor;
+  const lda = finalState.sel.lengthM || 0;
+  const ok = lda > 0 ? req <= lda : null;
+  out.innerHTML = `req ≈ <b class="${ok === false ? 'text-rose-300' : 'text-emerald-300'}">${Math.round(req)} m</b>` +
+    (lda ? ` / LDA ${lda} m ${ok ? '✓' : '✗ TOO SHORT'}` : '') +
+    `<div class="text-slate-500 text-[9px]">${daNote}${windNote} · rules-of-thumb, not POH tables</div>`;
+}
+window.__richdaleMetarTemp = null;
+(async function pollPerfTemp() {
+  for (;;) {
+    if (finalState.sel && gpsPosition) {
+      try {
+        const res = await api(`/api/weather/metar/history?icao=${finalState.sel.icao}&hours=1`);
+        const o = res.observations && res.observations[res.observations.length - 1];
+        if (o && o.temperature_c !== null && o.temperature_c !== undefined) {
+          window.__richdaleMetarTemp = o.temperature_c;
+        }
+        updatePerfCard();
+      } catch { /* offline: card shows base figures */ }
+    }
+    await new Promise(r => setTimeout(r, 120000));
+  }
+})();
+
+/* =================== TIER-3: EXPERIMENTAL CAMERA UNDERLAY ================== */
+
+$('camExit').addEventListener('click', () => {
+  $('camOverlay').classList.add('hidden');
+  const v = $('camVideo');
+  if (v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
+});
+
+function drawSynthSilhouette() {
+  if ($('camOverlay').classList.contains('hidden')) return;
+  requestAnimationFrame(drawSynthSilhouette);
+  const c = $('synthCanvas'), ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  const m = computeFinalMetrics();
+  if (!m || m.distNm > 8 || m.distNm < 0.02) return;
+  const s = finalState.sel;
+  const f = H * 0.9;                                  // focal scale (px)
+  const horizonY = H * 0.42;
+  const dFt = m.distNm * 6076;
+  const rwFt = 148, halfLenFt = (s.lengthM * 3.28084) / 2;
+  const eyeH = Math.max(3, m.hatFt);                  // ft above threshold plane
+  const proj = (xSideFt, zFwdFt) => {                 // z forward along runway axis
+    const zz = dFt + zFwdFt;
+    if (zz <= 10) return null;
+    const k = f / zz;
+    return [W / 2 + xSideFt * k - (m.xtkNm * 6076) * k, horizonY + (eyeH) * k];
+  };
+  // runway rectangle corners (threshold near, far end away)
+  const ang = s.angle * Math.PI / 180;
+  const pts = [
+    proj(-rwFt / 2, -halfLenFt), proj(rwFt / 2, -halfLenFt),
+    proj(rwFt / 2, halfLenFt), proj(-rwFt / 2, halfLenFt),
+  ];
+  if (pts.some(p => !p)) return;
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 3;
+  ctx.fillStyle = 'rgba(15,23,42,.55)';
+  ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // centreline dashes toward threshold
+  ctx.setLineDash([14, 12]);
+  ctx.strokeStyle = 'rgba(253,224,71,.9)';
+  ctx.beginPath();
+  const cl0 = proj(0, -halfLenFt), cl1 = proj(0, halfLenFt);
+  if (cl0 && cl1) { ctx.moveTo(cl0[0], cl0[1]); ctx.lineTo(cl1[0], cl1[1]); }
+  ctx.stroke(); ctx.setLineDash([]);
+  // aim marker: the point on the ideal path directly ahead of the pilot eye
+  const aimK = f / Math.max(50, dFt * 0.35);
+  ctx.strokeStyle = '#ffb703'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(W / 2, horizonY + eyeH * aimK, 16, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = 'bold 26px system-ui';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText(`RWY ${s.end} · ${m.distNm.toFixed(2)} NM · ${Math.round(m.hatFt)} ft`, 20, H - 20);
+}
+
+/* ===================== TRAFFIC (OpenSky ADS-B advisory) ==================== */
+
+let trafficOn = false, trafficTimer = null, trafficData = [];
+
+$('trafficToggle')?.addEventListener('click', () => {
+  trafficOn = !trafficOn;
+  $('trafficToggle').style.background = trafficOn ? 'rgba(244,63,94,0.25)' : '';
+  if (trafficOn) {
+    pollTraffic(); trafficTimer = setInterval(pollTraffic, 30000);
+  } else {
+    clearInterval(trafficTimer);
+    if (map.getSource('traffic')) map.getSource('traffic').setData(EMPTY_ROUTE);
+  }
+  showToast(trafficOn
+    ? 'Traffic advisory on — sees ONLY transponding aircraft in ADS-B coverage.'
+    : 'Traffic advisory off.', 'info', 6000);
+});
+
+async function pollTraffic() {
+  if (!gpsPosition || !trafficOn) return;
+  try {
+    const res = await api('/api/traffic/nearby', {
+      method: 'POST',
+      body: { latitude: gpsPosition[0], longitude: gpsPosition[1], radius_nm: 10 },
+    });
+    trafficData = res.aircraft || [];
+    if (!map.getSource('traffic')) {
+      map.addSource('traffic', { type: 'geojson', data: EMPTY_ROUTE });
+      map.addLayer({
+        id: 'traffic-dots', type: 'circle', source: 'traffic',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 13, 9],
+          'circle-color': '#fb7185', 'circle-stroke-width': 1.5, 'circle-stroke-color': '#0b1220',
+        },
+      });
+      map.addLayer({
+        id: 'traffic-labels', type: 'symbol', source: 'traffic',
+        layout: {
+          'text-field': ['get', 'label'], 'text-font': ['Open Sans Bold'],
+          'text-size': 9, 'text-offset': [0, 1.2], 'text-anchor': 'top',
+        },
+        paint: { 'text-color': '#fecdd3', 'text-halo-color': '#0b1220', 'text-halo-width': 1.2 },
+      });
+    }
+    map.getSource('traffic').setData({
+      type: 'FeatureCollection',
+      features: trafficData.map(a => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [a.longitude, a.latitude] },
+        properties: {
+          label: `${a.callsign}\n${a.altitude_ft != null ? a.altitude_ft + 'ft' : ''}`,
+        },
+      })),
+    });
+    // CPA vs own ship, next 60 s, linear motion (east/north NM frame)
+    const rad = Math.PI / 180, latR = gpsPosition[0] * rad;
+    const mySpd = (window.__richdaleGpsSpeedKt || 0) * (60 / 3600);   // nm per minute
+    const myTrk = window.__richdaleGpsHeadingDeg;
+    for (const a of trafficData) {
+      if (a.ground_speed_kt == null || a.track_deg == null || a.altitude_ft == null) continue;
+      const relAlt = Math.abs(a.altitude_ft - (lastKnownAltFt || 0));
+      if (relAlt > 500) continue;
+      // relative position now (east, north) in NM
+      const ex = (a.longitude - gpsPosition[1]) * 60 * Math.cos(latR);
+      const ny = (a.latitude - gpsPosition[0]) * 60;
+      // velocities in nm/min
+      const mvx = mySpd * Math.sin(myTrk * rad), mvy = mySpd * Math.cos(myTrk * rad);
+      const aspd = a.ground_speed_kt * (60 / 3600);
+      const avx = aspd * Math.sin(a.track_deg * rad), avy = aspd * Math.cos(a.track_deg * rad);
+      const miss = Math.hypot(ex + (avx - mvx) * 1.0, ny + (avy - mvy) * 1.0);
+      if (miss < 0.75) {
+        showToast(`TRAFFIC ${a.callsign} · ${relAlt < 300 ? 'SAME ALTITUDE' : relAlt + 'ft'} · closest ~${miss.toFixed(1)}nm in 60s`, 'error', 9000);
+        if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+        break;
+      }
+    }
+  } catch { /* silent — advisory layer */ }
+}
 
 $('earthZoomIn')?.addEventListener('click', () => earthView.zoomBy?.(0.72));
 $('earthZoomOut')?.addEventListener('click', () => earthView.zoomBy?.(1.38));
