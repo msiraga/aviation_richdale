@@ -204,13 +204,19 @@ tailwind.config = {
     padding: 5px 12px; font-size: 10px; letter-spacing: .08em;
     pointer-events: none; white-space: nowrap;
   }
-  /* ground (taxi) view card */
-  #groundPanel { position: absolute; left: 12px; top: 84px; z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
+  /* cockpit control bar: single swipeable row so every tool stays visible */
+  .chipbar { display: flex; align-items: center; gap: .375rem; overflow-x: auto;
+             -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .chipbar::-webkit-scrollbar { display: none; }
+  .chipbar > * { flex: 0 0 auto; }
+  #helpSheet dl div { border-top: 1px solid rgba(255,255,255,.06); }
+  /* ground (taxi) view card — bottom-left so it never stacks on Guardian */
+  #groundPanel { position: absolute; left: 12px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
   #groundPanel.show { display: block; }
   #groundCanvas { width: 100%; height: 150px; display: block; border-radius: 10px; background: rgba(2,8,20,.55); }
-  #guardPanel { position: absolute; left: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; }
+  #guardPanel { position: absolute; left: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; max-height: calc(100vh - 200px); overflow-y: auto; }
   #guardPanel.show { display: block; }
-  #finalPanel { position: absolute; right: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; }
+  #finalPanel { position: absolute; right: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; max-height: calc(100vh - 200px); overflow-y: auto; }
   #finalPanel.show { display: block; }
   .papi-light { width: 18px; height: 26px; border-radius: 5px; background: #475569; border: 1px solid rgba(255,255,255,.15); transition: background .2s; }
   .papi-light.on-white { background: #f8fafc; box-shadow: 0 0 10px rgba(248,250,252,.8); }
@@ -254,8 +260,8 @@ tailwind.config = {
   </div>
 
   <!-- cockpit control bar: grouped by purpose, planning tools live in the panel -->
-  <div class="glass pointer-events-auto flex items-center gap-1.5 px-3 py-2 flex-wrap justify-end max-w-[calc(100vw-1rem)]">
-    <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
+  <div class="glass pointer-events-auto chipbar px-3 py-2 justify-end max-w-[calc(100vw-1rem)]">
+    <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition shrink-0">PLAN</button>
 
     <span class="zone-label" id="mapZoneLabel" title="cycle map style (same as the DARK/LIGHT/SAT button)" style="cursor:pointer">MAP</span>
     <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
@@ -279,7 +285,8 @@ tailwind.config = {
     <button id="flyToggle" class="rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
       FLY
     </button>
-    <button id="sosBtn" class="rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-rose-200 hover:bg-rose-500/30 transition" title="emergency assistant">SOS</button>
+    <button id="sosBtn" class="rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-rose-200 hover:bg-rose-500/30 transition shrink-0" title="emergency assistant">SOS</button>
+    <button id="helpBtn" class="chip px-2.5 py-1.5 text-[12px] font-bold text-slate-200 hover:bg-white/10 transition shrink-0" title="every tool explained">?</button>
     <div class="h-6 w-px bg-slate-500/20 mx-1"></div>
     <div class="flex items-center gap-1.5 pr-1" title="server link">
       <span id="linkDot" class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
@@ -292,6 +299,48 @@ tailwind.config = {
   <div><span class="wx-dot" style="background:#22c55e"></span>VFR</div>
   <div><span class="wx-dot" style="background:#3b82f6"></span>MVFR</div>
   <div><span class="wx-dot" style="background:#ef4444"></span>IFR</div>
+</div>
+
+<div id="helpSheet" class="hidden fixed inset-0 z-[57] bg-[#02060d]/96 backdrop-blur-md overflow-y-auto">
+  <div class="max-w-xl mx-auto px-5 py-6">
+    <div class="flex items-center justify-between mb-4">
+      <span class="text-xs font-extrabold tracking-[0.25em] text-cyan-200">TOOL DIRECTORY</span>
+      <button id="helpClose" class="chip px-3 py-1.5 text-xs font-bold">CLOSE &#10005;</button>
+    </div>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300 mt-4 mb-1">Map layers (header · MAP)</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">DARK/LIGHT/SAT&nbsp;</dt><dd class="inline">base map &amp; satellite imagery — tap the MAP label to cycle too.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">CHART&nbsp;</dt><dd class="inline">official ENAIRE VFR chart; takes a few seconds per tile first time.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">VOR/DME&nbsp;</dt><dd class="inline">navaid symbols + airport dots coloured by live METAR (see legend below).</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">RAIN&nbsp;</dt><dd class="inline">precipitation radar, refreshes every 5 min.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">RP&nbsp;</dt><dd class="inline">Spanish VFR entry/exit reporting points from ENAIRE charts.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">TRF&nbsp;</dt><dd class="inline">ADS-B traffic advisory — transponding aircraft in coverage only.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">&#127758;&nbsp;</dt><dd class="inline">3D Earth with your great-circle itinerary, day/night terminator, X-RAY &amp; LOCATE.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300 mt-5 mb-1">Navigation</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">PLAN&nbsp;</dt><dd class="inline">route composer; altitude advisor ranks wind levels for you.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Nav log tabs&nbsp;</dt><dd class="inline">BRIEF (crosswind, glare, night check) · WEATHER (wind advisor, Fly-the-Future scrubber, TAF bars, clouds) · NOTAMS · LOG table.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">TUNE / DIRECT on a VOR&nbsp;</dt><dd class="inline">DIRECT = just fly the big amber heading. TUNE = classic CDI with TO/FROM, also showing the fly-heading.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">FINAL panel (right)&nbsp;</dt><dd class="inline">virtual PAPI lights, glidepath strip, TRACK/FLY/XW steering, voice callouts, landing perf card. Arm from an airport popup, Ground view, or FLY HUD.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">CAMERA VIEW&nbsp;</dt><dd class="inline">experimental rear-camera runway silhouette — non-conformal aid only.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300 mt-5 mb-1">Safety panels</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">Guardian (top-left in FLY)&nbsp;</dt><dd class="inline">engine-out: dashed reachability envelope + ranked runways by margin &amp; crosswind.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Ground view (bottom-left)&nbsp;</dt><dd class="inline">appears when slow near an airport — runway diagram, approach gates, per-end head/crosswind, SET FINAL.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">SOS&nbsp;</dt><dd class="inline">fullscreen emergency card: squawk 7700, position copy/SMS, best three runways.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">DR banner&nbsp;</dt><dd class="inline">appears automatically if GPS degrades with a route active — shows last HDG/GS.</dd></div>
+    </dl>
+
+    <div class="mt-6 text-[9px] text-slate-500 leading-relaxed">
+      Full detail, data sources and limitations live in MANUAL.md at the project root.
+      This app is decision support, not certified equipment.
+    </div>
+  </div>
 </div>
 
 <div id="corridorOverlay" class="hidden fixed inset-0 z-[45] bg-[#02060d]/95 backdrop-blur-md">
@@ -3787,6 +3836,11 @@ $('sosCopy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('sosPos').textContent); showToast('Position copied.', 'info'); }
   catch { showToast('Copy blocked by browser.', 'warn'); }
 });
+
+/* ========================= TOOL DIRECTORY (?) ============================== */
+
+$('helpBtn')?.addEventListener('click', () => $('helpSheet').classList.remove('hidden'));
+$('helpClose')?.addEventListener('click', () => $('helpSheet').classList.add('hidden'));
 
 /* ==================== FINAL APPROACH MODE (Tier-1 pack) ==================== */
 
