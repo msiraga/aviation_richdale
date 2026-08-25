@@ -151,16 +151,42 @@ tailwind.config = {
 
   .toast { transition: all .35s cubic-bezier(.19,1,.22,1); }
 
+  /* header zone labels */
+  .zone-label {
+    font-size: 8px; font-weight: 800; letter-spacing: 0.22em;
+    color: rgba(148,163,184,0.55);
+    margin-left: 6px; margin-right: -2px; user-select: none;
+  }
+
+  /* briefing tabs */
+  .rtab {
+    position: relative;
+    padding: 5px 12px;
+    border-radius: 9px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #94a3b8;
+    border: 1px solid transparent;
+    transition: all .18s ease;
+  }
+  .rtab:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+  .rtab.active {
+    background: rgba(34,211,238,0.14);
+    border-color: rgba(34,211,238,0.35);
+    color: #a5f3fc;
+  }
+
   /* ---------------- FLY mode: ruthless decluttering ---------------- */
   body.fly-mode #sidebar,
   body.fly-mode #terrainPanel,
   body.fly-mode #resultsPanel,
+  body.fly-mode #wxLegend,
   body.fly-mode #composerToggle,
-  body.fly-mode #fplToggle,
-  body.fly-mode #trackExport,
   body.fly-mode #chartEsToggle,
-  body.fly-mode #layerOpenaipToggle,
-  body.fly-mode #layerOfmToggle { display: none !important; }
+  body.fly-mode #navaidsToggle,
+  body.fly-mode #radarToggle,
+  body.fly-mode #layerOfmToggle,
+  body.fly-mode #layerOpenaipToggle { display: none !important; }
 
   #flyHud {
     position: absolute; left: 50%; transform: translateX(-50%);
@@ -204,33 +230,38 @@ tailwind.config = {
       </svg>
       <div class="leading-tight">
         <div class="text-[15px] font-extrabold tracking-wide text-sky-100">RICHDALE<span class="text-neon-cyan neon-text-cyan">// VFR OPS</span></div>
-        <div class="text-[10px] uppercase tracking-[0.22em] text-slate-400">situational awareness engine</div>
+        <div class="text-[9px] uppercase tracking-[0.22em] text-slate-500 flex items-center gap-1.5">
+          situational awareness
+          <span class="font-mono text-[8px] text-slate-600 select-none" title="build stamp — compare after server restarts">{{ build_id }}</span>
+        </div>
       </div>
     </div>
     <div class="h-7 w-px bg-slate-500/20"></div>
     <div class="font-mono text-sm text-neon-cyan neon-text-cyan tracking-widest" id="utcClock">--:--:--Z</div>
   </div>
 
-  <div class="glass pointer-events-auto flex items-center gap-2 px-3 py-2">
+  <!-- cockpit control bar: grouped by purpose, planning tools live in the panel -->
+  <div class="glass pointer-events-auto flex items-center gap-1.5 px-3 py-2 flex-wrap justify-end max-w-[calc(100vw-1rem)]">
     <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
+
+    <span class="zone-label">MAP</span>
     <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
-    <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">ENAIRE</button>
+    <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">CHART</button>
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
-    <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RADAR</button>
-    <span class="font-mono text-[9px] text-slate-500 select-none">{{ build_id }}</span>
-    <div class="h-7 w-px bg-slate-500/20"></div>
-    <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining">☀ --:--Z</span>
-    <div class="h-7 w-px bg-slate-500/20"></div>
-    <button id="fplToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-400/20 transition">FILE FPL</button>
-    <button id="trackExport" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">GPX</button>
-    <button id="flyToggle" class="flex items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
-      FLY
-    </button>
+    <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RAIN</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
+
+    <span class="zone-label">SKY</span>
+    <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining at your position">☀ --:--Z</span>
+
+    <span class="zone-label">FLIGHT</span>
     <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
       <span id="gpsDot" class="h-2 w-2 rounded-full bg-slate-500"></span>
       <span id="gpsLabel">GPS OFF</span>
+    </button>
+    <button id="flyToggle" class="rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
+      FLY
     </button>
     <div class="h-6 w-px bg-slate-500/20 mx-1"></div>
     <div class="flex items-center gap-1.5 pr-1" title="server link">
@@ -386,50 +417,77 @@ tailwind.config = {
       <span class="text-[10px] font-mono text-slate-500">E6B CORE</span>
     </div>
 
-    <div id="crosswindSlot" class="mb-3"></div>
+    <div id="briefTabs" class="flex gap-1 mb-3">
+      <button class="rtab active" data-tab="tab-brief">BRIEF</button>
+      <button class="rtab" data-tab="tab-wx">WEATHER</button>
+      <button class="rtab relative" data-tab="tab-notams">NOTAMS<span id="notamBadge" class="hidden absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-orange-400 text-black text-[9px] font-extrabold leading-[15px]"></span></button>
+      <button class="rtab" data-tab="tab-legs">LOG</button>
+    </div>
 
-    <div class="grid grid-cols-4 gap-2 mb-4">
-      <div class="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-2.5 text-center">
-        <div class="counter-value text-lg font-extrabold text-neon-cyan neon-text-cyan" id="statDistance">0</div>
-        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">NM total</div>
+    <!-- BRIEF: the numbers that matter + planning actions -->
+    <div id="tab-brief">
+      <div id="crosswindSlot" class="mb-3"></div>
+
+      <div class="grid grid-cols-4 gap-2 mb-4">
+        <div class="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-2.5 text-center">
+          <div class="counter-value text-lg font-extrabold text-neon-cyan neon-text-cyan" id="statDistance">0</div>
+          <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">NM total</div>
+        </div>
+        <div class="rounded-xl border border-emerald-300/15 bg-emerald-400/5 p-2.5 text-center">
+          <div class="counter-value text-lg font-extrabold text-neon-emerald" id="statEte">00:00</div>
+          <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">ETE</div>
+        </div>
+        <div class="rounded-xl border border-violet-300/15 bg-violet-400/5 p-2.5 text-center">
+          <div class="counter-value text-lg font-extrabold text-neon-violet" id="statFuel">0</div>
+          <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5" id="statFuelUnit">GAL</div>
+        </div>
+        <div class="rounded-xl border border-amber-300/15 bg-amber-400/5 p-2.5 text-center">
+          <div class="counter-value text-lg font-extrabold text-neon-amber" id="statGs">0</div>
+          <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">AVG GS kt</div>
+        </div>
       </div>
-      <div class="rounded-xl border border-emerald-300/15 bg-emerald-400/5 p-2.5 text-center">
-        <div class="counter-value text-lg font-extrabold text-neon-emerald" id="statEte">00:00</div>
-        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">ETE</div>
-      </div>
-      <div class="rounded-xl border border-violet-300/15 bg-violet-400/5 p-2.5 text-center">
-        <div class="counter-value text-lg font-extrabold text-neon-violet" id="statFuel">0</div>
-        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5" id="statFuelUnit">GAL</div>
-      </div>
-      <div class="rounded-xl border border-amber-300/15 bg-amber-400/5 p-2.5 text-center">
-        <div class="counter-value text-lg font-extrabold text-neon-amber" id="statGs">0</div>
-        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">AVG GS kt</div>
+
+      <div id="warningsSlot" class="space-y-1.5 mb-3"></div>
+
+      <div class="flex gap-2 mb-1">
+        <button id="fplToggle" class="flex-1 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[11px] font-bold text-amber-100 hover:bg-amber-400/20 transition">FILE FPL</button>
+        <button id="trackExport" class="flex-1 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-[11px] font-bold text-emerald-100 hover:bg-emerald-400/20 transition">EXPORT GPX</button>
       </div>
     </div>
 
-    <div id="warningsSlot" class="space-y-1.5 mb-3"></div>
-
-    <div class="overflow-x-auto rounded-xl border border-white/5">
-      <table class="w-full text-[11px] font-mono">
-        <thead>
-          <tr class="bg-white/5 text-[9px] uppercase tracking-wider text-slate-400">
-            <th class="px-2 py-2 text-left">LEG</th>
-            <th class="px-2 py-2 text-right">TC</th>
-            <th class="px-2 py-2 text-right">WCA</th>
-            <th class="px-2 py-2 text-right">MH</th>
-            <th class="px-2 py-2 text-right">WIND</th>
-            <th class="px-2 py-2 text-right">GS</th>
-            <th class="px-2 py-2 text-right">ETE</th>
-            <th class="px-2 py-2 text-right">FUEL</th>
-          </tr>
-        </thead>
-        <tbody id="legsBody" class="divide-y divide-white/5 text-slate-200"></tbody>
-      </table>
+    <!-- WEATHER: wind advisor, TAF windows, cloud forecast -->
+    <div id="tab-wx" class="hidden">
+      <div id="windAdvice" class="glass p-3 rounded-xl border border-sky-400/20"></div>
+      <div id="tafTimeline" class="hidden glass mt-3 p-3 rounded-xl border border-cyan-400/20"></div>
+      <div id="cloudStrip" class="hidden glass mt-3 p-3 rounded-xl border border-slate-400/20"></div>
     </div>
-    <div id="windAdvice" class="glass mt-3 p-3 rounded-xl border border-sky-400/20"></div>
-    <div id="tafTimeline" class="hidden glass mt-3 p-3 rounded-xl border border-cyan-400/20"></div>
-    <div id="cloudStrip" class="hidden glass mt-3 p-3 rounded-xl border border-slate-400/20"></div>
-    <div id="notamList" class="hidden glass mt-3 p-3 rounded-xl border border-orange-400/20 max-h-[280px] overflow-y-auto"></div>
+
+    <!-- NOTAMS -->
+    <div id="tab-notams" class="hidden">
+      <div id="notamList" class="glass p-3 rounded-xl border border-orange-400/20 max-h-[calc(100vh-320px)] overflow-y-auto"></div>
+    </div>
+
+    <!-- LOG: full leg table -->
+    <div id="tab-legs" class="hidden">
+      <div class="overflow-x-auto rounded-xl border border-white/5">
+        <table class="w-full text-[11px] font-mono">
+          <thead>
+            <tr class="bg-white/5 text-[9px] uppercase tracking-wider text-slate-400">
+              <th class="px-2 py-2 text-left">LEG</th>
+              <th class="px-2 py-2 text-right">TC</th>
+              <th class="px-2 py-2 text-right">WCA</th>
+              <th class="px-2 py-2 text-right">MH</th>
+              <th class="px-2 py-2 text-right">WIND</th>
+              <th class="px-2 py-2 text-right">GS</th>
+              <th class="px-2 py-2 text-right">ETE</th>
+              <th class="px-2 py-2 text-right">FUEL</th>
+            </tr>
+          </thead>
+          <tbody id="legsBody" class="divide-y divide-white/5 text-slate-200"></tbody>
+        </table>
+      </div>
+    </div>
+
     <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
       Winds aloft intersected against the gridded forecast at each leg midpoint and ETA.
       Magnetic variation evaluated with NOAA WMM spherical harmonics at altitude.
@@ -961,6 +1019,8 @@ function presentNavLog(data) {
   const sidebar = $('sidebar');
   sidebar.classList.remove('sidebar-enter');
   sidebar.classList.add('sidebar-visible');
+  activateBriefTab('tab-brief');
+  setNotamBadge(0);
 
   animateCounter($('statDistance'), 0, totals.distance_nm, 1400, v => v.toFixed(1));
   const eteMinutes = totals.ete_min;
@@ -1488,6 +1548,10 @@ const GpsManager = (() => {
     appendTrackPoint(latitude, longitude,
       position.timestamp ? new Date(position.timestamp).toISOString() : new Date().toISOString());
     updateSunChip();
+    if (!window.__richdaleFlyHintShown && lastNavlog) {
+      window.__richdaleFlyHintShown = true;
+      showToast('Route active and GPS live — tap FLY for the clean cockpit view.', 'info', 7000);
+    }
 
     if (!navigator.onLine) {
       const q = readQueue();
@@ -1741,6 +1805,31 @@ $('trackExport').addEventListener('click', () => {
   a.href = url; a.download = 'richdale-track.gpx'; a.click();
   URL.revokeObjectURL(url);
 });
+
+/* --------------------------- briefing tabs -------------------------------- */
+
+function activateBriefTab(tabId) {
+  document.querySelectorAll('#briefTabs .rtab').forEach(btn => {
+    const active = btn.dataset.tab === tabId;
+    btn.classList.toggle('active', active);
+    const panel = $(btn.dataset.tab);
+    if (panel) panel.classList.toggle('hidden', !active);
+  });
+}
+
+document.querySelectorAll('#briefTabs .rtab').forEach(btn =>
+  btn.addEventListener('click', () => activateBriefTab(btn.dataset.tab)));
+
+function setNotamBadge(count) {
+  const badge = $('notamBadge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
 
 /* ------------------------------ FPL generator ----------------------------- */
 
@@ -2240,6 +2329,7 @@ async function loadNotams(navlog) {
   box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">NOTAM query…</div>';
   try {
     const res = await api(`/api/notam?bbox=${bboxStr}`);
+    setNotamBadge(res.count || 0);
     if (!res.count) {
       box.innerHTML = '<div class="text-[11px] text-slate-500">No active geo-located NOTAMs within 0.35° of your route (ENAIRE live feed).</div>';
       return;
