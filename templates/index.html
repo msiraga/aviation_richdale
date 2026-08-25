@@ -196,12 +196,13 @@ tailwind.config = {
   body.fly-mode #flyHud { display: block; }
   .hud-num { font-variant-numeric: tabular-nums; }
 
-  /* weather category legend — informational only, never blocks map controls */
+  /* weather category legend — slim, centred at the bottom, touches nothing */
   #wxLegend {
-    position: absolute; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    z-index: 15; display: flex; flex-direction: column; gap: 4px;
-    padding: 8px 10px; font-size: 10px; letter-spacing: .08em;
-    pointer-events: none;
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 18; display: flex; flex-direction: row; align-items: center; gap: 12px;
+    padding: 5px 12px; font-size: 10px; letter-spacing: .08em;
+    pointer-events: none; white-space: nowrap;
   }
   /* ground (taxi) view card */
   #groundPanel { position: absolute; left: 12px; top: 84px; z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
