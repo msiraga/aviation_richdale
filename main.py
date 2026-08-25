@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 import os
 import re
 import sys
@@ -593,6 +594,101 @@ async def post_navlog(body: NavLogRequest):
 def _fmt_hmm(seconds: float) -> str:
     total_minutes = int(round(seconds / 60.0))
     return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+
+
+class WindGridRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[dict[str, float]] = Field(min_length=2, max_length=14)
+    altitudes_ft: list[int] = Field(
+        default_factory=lambda: [2500, 4500, 6500, 8500, 10500, 12500],
+        min_length=1,
+        max_length=8,
+    )
+    tas_kt: float = Field(gt=20, le=400)
+
+
+@app.post("/api/navigation/windgrid")
+async def post_wind_grid(body: WindGridRequest):
+    """Sample winds at every waypoint for each candidate altitude and rank levels."""
+    pts = []
+    for p in body.points:
+        lat = p.get("latitude")
+        lon = p.get("longitude")
+        if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 180:
+            raise BadRequest("each point needs valid latitude/longitude")
+        pts.append((float(lat), float(lon)))
+
+    def leg_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return haversine_distance_nm(a[0], a[1], b[0], b[1])
+
+    def leg_course(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return initial_true_bearing_deg(a[0], a[1], b[0], b[1])
+
+    levels_out = []
+    for alt in sorted(set(body.altitudes_ft)):
+        samples = []
+        for lat, lon in pts:
+            try:
+                w = await app.state.winds.sample(lat, lon, float(alt))
+            except Exception as exc:  # noqa: BLE001 — a dead grid cell must not kill the level
+                log.info("wind sample failed at %.2f,%.2f %dft: %s", lat, lon, alt, exc)
+                continue
+            samples.append({
+                "latitude": lat,
+                "longitude": lon,
+                "wind_from_deg": w.wind_from_deg_true,
+                "wind_speed_kt": w.wind_speed_kt,
+            })
+
+        if len(samples) < 2:
+            continue
+
+        total_headwind = 0.0
+        weighted_ete_s = 0.0
+        total_dist_nm = 0.0
+        for i in range(len(pts) - 1):
+            dist_nm = leg_distance(pts[i], pts[i + 1])
+            if dist_nm <= 0:
+                continue
+            course = leg_course(pts[i], pts[i + 1])
+            # average the two endpoint samples for the leg
+            w_from = [
+                s["wind_from_deg"] for s in samples
+                if (s["latitude"], s["longitude"]) in (pts[i], pts[i + 1])
+            ]
+            w_speed = [
+                s["wind_speed_kt"] for s in samples
+                if (s["latitude"], s["longitude"]) in (pts[i], pts[i + 1])
+            ]
+            if len(w_from) >= 2:
+                from_deg = sum(w_from[:2]) / 2.0
+                speed_kt = sum(w_speed[:2]) / 2.0
+                head = speed_kt * math.cos(math.radians(from_deg - course))
+                gs = max(20.0, body.tas_kt - head)
+                total_headwind += head * dist_nm
+                weighted_ete_s += (dist_nm / gs) * 3600.0
+                total_dist_nm += dist_nm
+
+        if total_dist_nm <= 0:
+            continue
+
+        levels_out.append({
+            "altitude_ft": alt,
+            "samples": samples,
+            "total_distance_nm": round(total_dist_nm, 1),
+            "distance_weighted_headwind_kt": round(total_headwind / total_dist_nm, 1),
+            "average_gs_kt": round(body.tas_kt - total_headwind / total_dist_nm, 1),
+            "ete_min": round(weighted_ete_s / 60.0, 1),
+        })
+
+    levels_out.sort(key=lambda lv: lv["ete_min"])
+    recommended = levels_out[0]["altitude_ft"] if levels_out else None
+    return ok_payload({
+        "levels": levels_out,
+        "recommended_altitude_ft": recommended,
+        "tas_kt": body.tas_kt,
+    })
 
 
 @app.post("/api/terrain/profile")

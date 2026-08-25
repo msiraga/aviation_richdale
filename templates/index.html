@@ -150,6 +150,45 @@ tailwind.config = {
   }
 
   .toast { transition: all .35s cubic-bezier(.19,1,.22,1); }
+
+  /* ---------------- FLY mode: ruthless decluttering ---------------- */
+  body.fly-mode #sidebar,
+  body.fly-mode #terrainPanel,
+  body.fly-mode #resultsPanel,
+  body.fly-mode #composerToggle,
+  body.fly-mode #fplToggle,
+  body.fly-mode #trackExport,
+  body.fly-mode #chartEsToggle,
+  body.fly-mode #layerOpenaipToggle,
+  body.fly-mode #layerOfmToggle { display: none !important; }
+
+  #flyHud {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    z-index: 40; display: none;
+  }
+  body.fly-mode #flyHud { display: block; }
+  .hud-num { font-variant-numeric: tabular-nums; }
+
+  /* weather category legend */
+  #wxLegend {
+    position: absolute; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 30; display: flex; flex-direction: column; gap: 4px;
+    padding: 8px 10px; font-size: 10px; letter-spacing: .08em;
+  }
+  .wx-dot { width: 9px; height: 9px; border-radius: 9999px; display: inline-block; margin-right: 6px; }
+
+  /* wind advice card inside results */
+  #windAdvice { display: none; }
+  #windAdvice.show { display: block; }
+
+  /* CDI needle */
+  .cdi-track { position: relative; height: 4px; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.25), rgba(255,255,255,.12)); }
+  .cdi-needle { position: absolute; top: -5px; width: 3px; height: 14px; border-radius: 2px;
+    background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,.9);
+    left: 50%; transform: translateX(-50%); transition: left .6s ease; }
+
 </style>
 </head>
 
@@ -177,10 +216,16 @@ tailwind.config = {
     <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
     <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">ENAIRE</button>
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
+    <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RADAR</button>
     <span class="font-mono text-[9px] text-slate-500 select-none">{{ build_id }}</span>
+    <div class="h-7 w-px bg-slate-500/20"></div>
+    <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining">☀ --:--Z</span>
     <div class="h-7 w-px bg-slate-500/20"></div>
     <button id="fplToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-amber-100 hover:bg-amber-400/20 transition">FILE FPL</button>
     <button id="trackExport" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">GPX</button>
+    <button id="flyToggle" class="flex items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
+      FLY
+    </button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
     <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
@@ -194,6 +239,32 @@ tailwind.config = {
     </div>
   </div>
 </header>
+
+<div id="wxLegend" class="glass">
+  <div><span class="wx-dot" style="background:#22c55e"></span>VFR</div>
+  <div><span class="wx-dot" style="background:#3b82f6"></span>MVFR</div>
+  <div><span class="wx-dot" style="background:#ef4444"></span>IFR</div>
+</div>
+
+<div id="flyHud">
+  <div class="glass px-5 py-4 w-[min(92vw,560px)]">
+    <div class="flex items-center justify-between gap-4 mb-2">
+      <span class="text-[10px] uppercase tracking-[0.25em] text-orange-300 font-bold">Next</span>
+      <span id="hudWp" class="font-mono text-2xl text-orange-100 font-extrabold">—</span>
+      <span id="hudBrg" class="font-mono text-sm text-slate-300">BRG ---°</span>
+      <button id="flyExit" class="chip px-2 py-0.5 text-[10px]">EXIT</button>
+    </div>
+    <div class="grid grid-cols-4 gap-2 mb-2">
+      <div class="text-center"><div class="hud-num text-xl font-extrabold text-cyan-200" id="hudDist">--.-</div><div class="text-[9px] tracking-widest text-slate-500">NM</div></div>
+      <div class="text-center"><div class="hud-num text-xl font-extrabold text-cyan-200" id="hudEte">--:--</div><div class="text-[9px] tracking-widest text-slate-500">ETE</div></div>
+      <div class="text-center"><div class="hud-num text-xl font-extrabold text-emerald-200" id="hudGs">---</div><div class="text-[9px] tracking-widest text-slate-500">GS KT</div></div>
+      <div class="text-center"><div class="hud-num text-xl font-extrabold text-amber-200" id="hudXtk">±.--
+        </div><div class="text-[9px] tracking-widest text-slate-500">XTK NM</div></div>
+    </div>
+    <div class="cdi-track"><div class="cdi-needle" id="cdiNeedle"></div></div>
+    <div class="flex justify-between mt-1 text-[8px] tracking-widest text-slate-500"><span>◀ LEFT</span><span>COURSE (1 NM FS)</span><span>RIGHT ▶</span></div>
+  </div>
+</div>
 
 <div id="fplModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
   <div class="glass w-[640px] max-w-full max-h-[86vh] overflow-y-auto p-5 flex flex-col gap-3">
@@ -348,6 +419,7 @@ tailwind.config = {
         <tbody id="legsBody" class="divide-y divide-white/5 text-slate-200"></tbody>
       </table>
     </div>
+    <div id="windAdvice" class="glass mt-3 p-3 rounded-xl border border-sky-400/20"></div>
     <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
       Winds aloft intersected against the gridded forecast at each leg midpoint and ETA.
       Magnetic variation evaluated with NOAA WMM spherical harmonics at altitude.
@@ -580,10 +652,10 @@ map.on('load', () => {
     paint: {
       'circle-radius': ['case', ['==', ['get', 'kind'], 'large_airport'], 6,
                               ['==', ['get', 'kind'], 'medium_airport'], 5, 4],
-      'circle-color': '#67e8f9',
-      'circle-stroke-color': '#0e7490',
-      'circle-stroke-width': 1.4,
-      'circle-opacity': 0.9,
+      'circle-color': '#0f1c2e',
+      'circle-stroke-color': ['get', 'catColor'],
+      'circle-stroke-width': 2.4,
+      'circle-opacity': 0.85,
     },
     layout: { visibility: 'none' }
   });
@@ -858,6 +930,7 @@ form.addEventListener('submit', async (ev) => {
     const result = await api('/api/navigation/log', { method: 'POST', body });
     lastNavlog = result;
     presentNavLog(result);
+    loadWindAdvice(result);
     await loadTerrainFor(result);
   } catch (err) {
     showToast(`Flight plan failed: ${err.message}`, 'error');
@@ -1315,8 +1388,11 @@ const GpsManager = (() => {
     }
 
     gpsPosition = [latitude, longitude];
+    window.__richdaleGpsSpeedKt = (typeof position.coords.speed === 'number' && position.coords.speed > 0)
+      ? position.coords.speed * 1.94384 : null;
     appendTrackPoint(latitude, longitude,
       position.timestamp ? new Date(position.timestamp).toISOString() : new Date().toISOString());
+    updateSunChip();
 
     if (!navigator.onLine) {
       const q = readQueue();
@@ -1476,10 +1552,11 @@ function setAirportData(list) {
     return {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [a.longitude, a.latitude] },
-      properties: { ident: a.ident, name: a.name, kind: a.type },
+      properties: { ident: a.ident, name: a.name, kind: a.type, catColor: '#67e8f9', cat: '' },
     };
   });
   map.getSource('airports').setData({ type: 'FeatureCollection', features });
+  colorizeAirportsWithWeather(list);
 }
 
 function setNavaidData(list) {
@@ -1506,8 +1583,9 @@ function bearingToDeg(fromLat, fromLon, toLat, toLon) {
 }
 
 function airportPopupHtml(a) {
+  const catBadge = a.cat ? `<span style="color:${CAT_COLORS[a.cat] || '#67e8f9'};font-weight:700"> ${a.cat}</span>` : '';
   return `<div class="text-[11px] leading-snug" style="color:#e2e8f0">
-    <div class="font-bold text-cyan-200">${a.ident}</div>
+    <div class="font-bold text-cyan-200">${a.ident}${catBadge}</div>
     <div>${a.name}</div>
     <div class="text-slate-400">${a.kind} · ${a.elevation_ft} ft${a.municipality ? ' · ' + a.municipality : ''}</div>
     <button onclick="window.__richdaleMetar('${a.ident}')" style="margin-top:6px" class="chip px-2 py-0.5 text-[10px]">METAR</button>
@@ -1613,6 +1691,302 @@ setTimeout(() => {
   map.fitBounds([BOOT.mapBboxSw.slice().reverse(), BOOT.mapBboxNe.slice().reverse()],
     { padding: { top: 120, bottom: 300, left: 440, right: 460 }, duration: 2200, maxZoom: 9.4 });
 }, 350);
+
+/* ======================= SUNLIGHT / DAYLIGHT ENVELOPE ====================== */
+
+function sunTimesUTC(latDeg, lonDeg, date) {
+  const rad = Math.PI / 180;
+  const dayMs = 86400000;
+  const J1970 = 2440588, J2000 = 2451545;
+  const toJulian = d => d.valueOf() / dayMs - 0.5 + J1970;
+  const n = Math.round(toJulian(date) - J2000 - 0.0009 - lonDeg / 360);
+  const Jstar = J2000 + 0.0009 + n + lonDeg / 360;
+  const M = (357.5291 + 0.98560028 * (Jstar - J2000)) % 360;          // solar mean anomaly
+  const C = 1.9148 * Math.sin(M * rad) + 0.02 * Math.sin(2 * M * rad) + 0.0003 * Math.sin(3 * M * rad);
+  const λ = (M + C + 180 + 102.9372) % 360;                            // ecliptic longitude
+  const Jtransit = Jstar + 0.0053 * Math.sin(M * rad) - 0.0069 * Math.sin(2 * λ * rad);
+  const δ = Math.asin(Math.sin(λ * rad) * Math.sin(23.4397 * rad));   // declination
+  const cosH = (Math.sin(-0.833 * rad) - Math.sin(latDeg * rad) * Math.sin(δ)) /
+               (Math.cos(latDeg * rad) * Math.cos(δ));
+  if (cosH > 1) return { sunset: null, sunrise: null };               // polar night
+  if (cosH < -1) return { sunset: null, sunrise: null };              // midnight sun
+  const h0 = Math.acos(cosH) / rad;
+  const julToMs = j => (j + 0.5 - J1970) * dayMs;
+  return {
+    sunrise: julToMs(Jtransit - h0 / 360),
+    sunset: julToMs(Jtransit + h0 / 360),
+  };
+}
+
+function updateSunChip() {
+  const el = $('sunChip');
+  if (!el) return;
+  let lat = gpsPosition ? gpsPosition[0] : null, lon = gpsPosition ? gpsPosition[1] : null;
+  if (lat === null && lastNavlog && lastNavlog.legs && lastNavlog.legs.length) {
+    const g = lastNavlog.legs[0].geometry[0];
+    lat = g[0]; lon = g[1];
+  }
+  if (lat === null) { el.textContent = '☀ enable GPS or plan a route'; return; }
+  const now = new Date();
+  const t = sunTimesUTC(lat, lon, now);
+  if (!t.sunset) { el.textContent = '☀ no sunset today'; return; }
+  const ss = new Date(t.sunset).toISOString().substr(11, 5);
+  const remainMs = t.sunset - now.getTime();
+  el.textContent = remainMs > 0
+    ? `☀ SS ${ss}Z · ${Math.floor(remainMs / 3600000)}h${String(Math.floor((remainMs % 3600000) / 60000)).padStart(2, '0')}m left`
+    : `☀ SS ${ss}Z · past sunset`;
+}
+setInterval(updateSunChip, 60000);
+
+/* ========================= RAIN RADAR (RainViewer) ========================= */
+
+let radarVisible = false, radarTimer = null, radarFrameUrl = null;
+
+async function refreshRadarFrame() {
+  try {
+    const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await res.json();
+    const frames = (data.radar && data.radar.past) || [];
+    if (!frames.length) throw new Error('no radar frames');
+    const frame = frames[frames.length - 1];
+    radarFrameUrl = `${data.host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`;
+    if (map.getSource('rainradar')) map.getSource('rainradar').tiles = [radarFrameUrl];
+  } catch (err) {
+    showToast(`Radar unavailable: ${err.message}`, 'warn');
+  }
+}
+
+$('radarToggle').addEventListener('click', async () => {
+  radarVisible = !radarVisible;
+  $('radarToggle').style.background = radarVisible ? 'rgba(52,211,153,0.25)' : '';
+  if (radarVisible) {
+    if (!map.getSource('rainradar')) {
+      await refreshRadarFrame();
+      if (!radarFrameUrl) { radarVisible = false; return; }
+      map.addSource('rainradar', { type: 'raster', tiles: [radarFrameUrl], tileSize: 256,
+        attribution: '&copy; RainViewer' });
+      map.addLayer({ id: 'rainradar-layer', type: 'raster', source: 'rainradar',
+        paint: { 'raster-opacity': 0.75 } });
+    } else {
+      setLayerVisibility('rainradar-layer', true);
+    }
+    radarTimer = setInterval(refreshRadarFrame, 300000); // fresh frame every 5 min
+  } else {
+    setLayerVisibility('rainradar-layer', false);
+    clearInterval(radarTimer);
+  }
+});
+
+/* ================= AIRPORT DOTS COLORED BY LIVE WEATHER ==================== */
+
+const CAT_COLORS = { VFR: '#22c55e', MVFR: '#3b82f6', IFR: '#ef4444' };
+
+async function colorizeAirportsWithWeather(list) {
+  const icaos = [...new Set(list.map(a => a.ident).filter(i => /^[A-Z]{4}$/.test(i)))].slice(0, 12);
+  if (!icaos.length) return;
+  try {
+    const res = await api('/api/weather/metar', { method: 'POST', body: { icaos } });
+    const catByIdent = {};
+    for (const r of res.reports) {
+      catByIdent[r.ident || r.station_id] = r.flight_category;
+      const rec = airportsCache.get(r.ident || r.station_id);
+      if (rec) rec.cat = r.flight_category;
+    }
+    const features = list.map(a => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [a.longitude, a.latitude] },
+      properties: {
+        ident: a.ident, name: a.name, kind: a.type,
+        cat: catByIdent[a.ident] || '',
+        catColor: CAT_COLORS[catByIdent[a.ident]] || '#67e8f9',
+      },
+    }));
+    map.getSource('airports').setData({ type: 'FeatureCollection', features });
+  } catch { /* weather coloring is opportunistic */ }
+}
+
+/* ================= WIND FIELD + ALTITUDE ADVISOR =========================== */
+
+function makeWindArrowIcon() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 48;
+  const ctx = c.getContext('2d');
+  ctx.translate(24, 24);
+  ctx.fillStyle = '#38bdf8';
+  ctx.strokeStyle = '#082f49';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -18); ctx.lineTo(11, 14); ctx.lineTo(0, 6); ctx.lineTo(-11, 14);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  return c;
+}
+
+async function loadWindAdvice(navlog) {
+  const card = $('windAdvice');
+  if (!card) return;
+  // decimate the route geometry into <=10 analysis points
+  const pts = [];
+  for (const leg of navlog.legs) {
+    const g = leg.geometry;
+    pts.push(g[Math.floor(g.length / 2)]); // leg midpoint is where wind matters
+  }
+  const first = navlog.legs[0].geometry[0];
+  const last = navlog.legs[navlog.legs.length - 1].geometry.slice(-1)[0];
+  const analysis = [[first[0], first[1]], ...pts.map(p => [p[0], p[1]]), [last[0], last[1]]]
+    .filter((p, i, arr) => i === 0 || Math.abs(p[0]-arr[i-1][0]) > 1e-6 || Math.abs(p[1]-arr[i-1][1]) > 1e-6)
+    .slice(0, 12);
+
+  const cruise = navlog.cruise_altitude_ft;
+  const candidates = [...new Set([2500, 4500, 6500, 8500, cruise - 2000, cruise, cruise + 2000]
+    .filter(a => a >= 1000 && a <= 14000))];
+
+  try {
+    const res = await api('/api/navigation/windgrid', {
+      method: 'POST',
+      body: { points: analysis.map(p => ({ latitude: p[0], longitude: p[1] })),
+              altitudes_ft: candidates, tas_kt: navlog.tas_kt },
+    });
+
+    const best = res.levels[0];
+    const current = res.levels.find(l => l.altitude_ft === cruise);
+    if (!best) { card.classList.remove('show'); return; }
+
+    const delta = current ? Math.round(current.average_gs_kt - best.average_gs_kt) : 0;
+    const headline = best.altitude_ft === cruise
+      ? `${cruise} ft is your best level — avg GS ${best.average_gs_kt} kt`
+      : `Fly ${best.altitude_ft} ft instead of ${cruise} ft → +${delta} kt average GS (${best.average_gs_kt} vs ${current ? current.average_gs_kt : '?'})`;
+    card.innerHTML =
+      `<div class="flex items-start gap-2">
+         <span class="text-lg leading-none">🪁</span>
+         <div>
+           <div class="text-[10px] uppercase tracking-[0.2em] text-sky-300 font-bold mb-1">Altitude advisor</div>
+           <div class="text-[13px] text-sky-50 font-semibold">${headline}</div>
+           <div class="text-[10px] text-slate-400 mt-1">Levels ranked by distance-weighted headwind on YOUR route · GFS grid</div>
+         </div>
+       </div>`;
+    card.classList.add('show');
+
+    drawWindArrows(best.samples);
+  } catch (err) {
+    card.classList.remove('show');
+  }
+}
+
+function drawWindArrows(samples) {
+  if (!map.hasImage('wind-arrow')) map.addImage('wind-arrow', makeWindArrowIcon(), { pixelRatio: 2 });
+  if (!map.getSource('windfield')) {
+    map.addSource('windfield', { type: 'geojson', data: EMPTY_ROUTE });
+    map.addLayer({
+      id: 'wind-arrows', type: 'symbol', source: 'windfield',
+      layout: {
+        'icon-image': 'wind-arrow',
+        'icon-size': ['interpolate', ['linear'], ['get', 'kt'], 5, 0.45, 30, 0.95],
+        'icon-rotate': ['get', 'toDeg'],
+        'icon-allow-overlap': true,
+      },
+    });
+    map.addLayer({
+      id: 'wind-labels', type: 'symbol', source: 'windfield', minzoom: 7,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
+        'text-size': 10, 'text-offset': [0, 1.6], 'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#bae6fd', 'text-halo-color': '#082f49', 'text-halo-width': 1.2 },
+    });
+  }
+  map.getSource('windfield').setData({
+    type: 'FeatureCollection',
+    features: samples.map(s => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [s.longitude, s.latitude] },
+      properties: {
+        kt: s.wind_speed_kt,
+        toDeg: (s.wind_from_deg + 180) % 360,
+        label: `${Math.round(s.wind_from_deg)}°/${Math.round(s.wind_speed_kt)}`,
+      },
+    })),
+  });
+}
+
+/* ============================== FLY MODE =================================== */
+
+let flyModeActive = false, hudTimerId = null;
+
+$('flyToggle').addEventListener('click', () => setFlyMode(!flyModeActive));
+$('flyExit').addEventListener('click', () => setFlyMode(false));
+
+function setFlyMode(on) {
+  flyModeActive = on;
+  document.body.classList.toggle('fly-mode', on);
+  $('flyToggle').style.background = on ? 'rgba(251,146,60,0.3)' : '';
+  if (on) {
+    if (gpsPosition) map.flyTo({ center: [gpsPosition[1], gpsPosition[0]], zoom: 11, pitch: 30 });
+    hudTimerId = setInterval(updateHud, 1000);
+    updateHud();
+  } else {
+    clearInterval(hudTimerId);
+  }
+}
+
+function legGeometryEnds(leg) {
+  const g = leg.geometry || [];
+  return [g[0], g[g.length - 1]];
+}
+
+function projectOnLeg(fromPt, toPt, pos) {
+  const meanLat = (fromPt[0] + pos[0]) / 2 * Math.PI / 180;
+  const nmPerDegLat = 60.0, nmPerDegLon = 60.0 * Math.cos(meanLat);
+  const bx = (toPt[1] - fromPt[1]) * nmPerDegLon;
+  const by = (toPt[0] - fromPt[0]) * nmPerDegLat;
+  const px = (pos[1] - fromPt[1]) * nmPerDegLon;
+  const py = (pos[0] - fromPt[0]) * nmPerDegLat;
+  const lenSq = bx * bx + by * by;
+  if (lenSq < 1e-9) return null;
+  const t = Math.max(-0.2, Math.min(1.2, (px * bx + py * by) / lenSq));
+  const along = t * Math.sqrt(lenSq);
+  const cross = (px * by - py * bx) / Math.sqrt(lenSq); // >0 = right of course
+  return { along, cross, total: Math.sqrt(lenSq), distToEnd: Math.sqrt(lenSq) - along };
+}
+
+function updateHud() {
+  if (!flyModeActive || !lastNavlog || !lastNavlog.legs || !gpsPosition) {
+    $('hudWp').textContent = lastNavlog ? '—' : 'plan a route';
+    return;
+  }
+  // pick active leg: first leg not yet completed (distToEnd > 0), else nearest
+  let chosen = null, chosenProj = null;
+  for (const leg of lastNavlog.legs) {
+    const [a, b] = legGeometryEnds(leg);
+    const pr = projectOnLeg(a, b, gpsPosition);
+    if (!pr) continue;
+    if (pr.distToEnd > 0) { chosen = leg; chosenProj = pr; break; }
+  }
+  if (!chosen && lastNavlog.legs.length) {
+    const [a, b] = legGeometryEnds(lastNavlog.legs[lastNavlog.legs.length - 1]);
+    chosen = lastNavlog.legs[lastNavlog.legs.length - 1];
+    chosenProj = projectOnLeg(a, b, gpsPosition);
+  }
+  if (!chosen || !chosenProj) return;
+  const [, toPt] = legGeometryEnds(chosen);
+  const brg = bearingToDeg(gpsPosition[0], gpsPosition[1], toPt[0], toPt[1]);
+  const gsKt = (typeof window.__richdaleGpsSpeedKt === 'number' && window.__richdaleGpsSpeedKt > 5)
+    ? window.__richdaleGpsSpeedKt : Math.max(lastNavlog.totals.average_groundspeed_kt, 40);
+  const eteMin = chosenProj.distToEnd / gsKt * 60;
+  $('hudWp').textContent = chosen.to || chosen.to_label || '?';
+  $('hudBrg').textContent = `BRG ${String(Math.round(brg)).padStart(3, '0')}°`;
+  $('hudDist').textContent = chosenProj.distToEnd.toFixed(1);
+  const mm = Math.max(0, Math.round(eteMin));
+  $('hudEte').textContent = `${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`;
+  $('hudGs').textContent = Math.round(gsKt);
+  const xtk = chosenProj.cross;
+  $('hudXtk').textContent = `${xtk >= 0 ? 'R' : 'L'} ${Math.abs(xtk).toFixed(2)}`;
+  const frac = Math.max(-1, Math.min(1, xtk / 1.0)); // ±1 NM full scale
+  $('cdiNeedle').style.left = `${50 + frac * 46}%`;
+}
+
+// expose GPS speed for the HUD
+window.__richdaleGpsSpeedKt = null;
 </script>
 </body>
 </html>
