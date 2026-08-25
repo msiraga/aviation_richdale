@@ -180,6 +180,101 @@ class TafReport:
     parse_warnings: tuple[str, ...] = ()
 
 
+def taf_period_category(
+    visibility_m: float | None,
+    ceiling_ft: int | None,
+    cavok: bool,
+    visibility_unlimited: bool = False,
+) -> str:
+    """Standard FAA/ICAO flight-category bucketing for a TAF period."""
+    if cavok or visibility_unlimited:
+        return "VFR"
+    vis = visibility_m if visibility_m is not None else 10000.0
+    ceil = ceiling_ft if ceiling_ft is not None else 30000
+    if vis < 5000 or ceil < 1000:
+        return "IFR"
+    if vis < 9000 or ceil < 3000:
+        return "MVFR"
+    return "VFR"
+
+
+def serialize_taf_timeline(report: TafReport) -> dict[str, Any]:
+    """JSON-ready timeline of a parsed TAF for the cockpit validity bars."""
+    periods: list[dict[str, Any]] = []
+    for p in report.periods:
+        if p.valid_from is None or p.valid_to is None:
+            continue
+        kind = p.change_type
+        if p.probability_pct:
+            kind = f"{kind} {p.probability_pct}%"
+        wind_txt = None
+        if p.wind is not None:
+            gust = f"G{round(p.wind.gust_kt):02d}" if getattr(p.wind, "gust_kt", None) else ""
+            dir_txt = f"{round(p.wind.direction_from_deg_true):03d}" if p.wind.direction_from_deg_true is not None else "VRB"
+            wind_txt = f"{dir_txt}{round(p.wind.speed_kt or 0):02d}{gust}KT"
+        periods.append({
+            "kind": kind,
+            "start": p.valid_from.isoformat(),
+            "end": p.valid_to.isoformat(),
+            "visibility_m": round(p.visibility_m) if p.visibility_m is not None else None,
+            "visibility_unlimited": p.visibility_unlimited,
+            "ceiling_ft": p.ceiling_ft,
+            "cavok": p.cavok,
+            "wind": wind_txt,
+            "weather": list(p.weather)[:4],
+            "category": taf_period_category(
+                p.visibility_m, p.ceiling_ft, p.cavok, p.visibility_unlimited
+            ),
+        })
+    periods.sort(key=lambda x: x["start"])
+    return {
+        "icao": report.icao,
+        "issued": report.issued_at.isoformat() if report.issued_at else None,
+        "valid_from": report.valid_from.isoformat() if report.valid_from else None,
+        "valid_to": report.valid_to.isoformat() if report.valid_to else None,
+        "raw_text": report.raw_text.strip(),
+        "periods": periods,
+    }
+
+
+async def fetch_cloud_profile(
+    latitude: float,
+    longitude: float,
+    hours_ahead: int = 12,
+) -> dict[str, Any]:
+    """Low/mid/high cloud-cover percentages for the next N hours at a point."""
+    params: dict[str, str | float] = {
+        "latitude": round(latitude, 2),
+        "longitude": round(longitude, 2),
+        "hourly": "cloud_cover_low,cloud_cover_mid,cloud_cover_high",
+        "forecast_days": 2,
+        "timezone": "GMT",
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), headers={"User-Agent": USER_AGENT}) as client:
+        response = await client.get(OPEN_METEO_BASE_URL, params=params)
+        response.raise_for_status()
+        body = response.json()
+    hourly = body.get("hourly") or {}
+    times = hourly.get("time") or []
+    low = hourly.get("cloud_cover_low") or []
+    mid = hourly.get("cloud_cover_mid") or []
+    high = hourly.get("cloud_cover_high") or []
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00")
+    hours: list[dict[str, Any]] = []
+    for i, t in enumerate(times):
+        if t < now_iso:
+            continue
+        if len(hours) >= hours_ahead:
+            break
+        hours.append({
+            "time": t,
+            "low_pct": low[i] if i < len(low) else None,
+            "mid_pct": mid[i] if i < len(mid) else None,
+            "high_pct": high[i] if i < len(high) else None,
+        })
+    return {"latitude": latitude, "longitude": longitude, "hours": hours}
+
+
 @dataclass(frozen=True, slots=True)
 class StationInfo:
     icao: str

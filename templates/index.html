@@ -246,6 +246,13 @@ tailwind.config = {
   <div><span class="wx-dot" style="background:#ef4444"></span>IFR</div>
 </div>
 
+<div id="corridorOverlay" class="hidden fixed inset-0 z-[45] bg-[#02060d]/95 backdrop-blur-md">
+  <button id="corridorClose" class="chip absolute top-4 right-4 z-10 px-3 py-1.5 text-xs font-bold text-violet-100 hover:bg-violet-400/20">EXIT CORRIDOR</button>
+  <div class="absolute top-5 left-5 text-[10px] font-mono tracking-widest text-slate-400 pointer-events-none select-none">
+    3D CORRIDOR · SRTM TERRAIN · drag orbit · RMB pan · wheel zoom
+  </div>
+</div>
+
 <div id="flyHud">
   <div class="glass px-5 py-4 w-[min(92vw,560px)]">
     <div class="flex items-center justify-between gap-4 mb-2">
@@ -420,6 +427,9 @@ tailwind.config = {
       </table>
     </div>
     <div id="windAdvice" class="glass mt-3 p-3 rounded-xl border border-sky-400/20"></div>
+    <div id="tafTimeline" class="hidden glass mt-3 p-3 rounded-xl border border-cyan-400/20"></div>
+    <div id="cloudStrip" class="hidden glass mt-3 p-3 rounded-xl border border-slate-400/20"></div>
+    <div id="notamList" class="hidden glass mt-3 p-3 rounded-xl border border-orange-400/20 max-h-[280px] overflow-y-auto"></div>
     <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
       Winds aloft intersected against the gridded forecast at each leg midpoint and ETA.
       Magnetic variation evaluated with NOAA WMM spherical harmonics at altitude.
@@ -434,6 +444,7 @@ tailwind.config = {
       <h2 class="text-[12px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Terrain Profile 3D</h2>
       <p class="text-[9px] text-slate-500 tracking-wide">NASA SRTM DEM · <span class="text-neon-cyan">cyan plane = cruise + 1000ft safety ceiling</span></p>
     </div>
+    <button id="corridorBtn" class="chip px-2.5 py-1 text-[10px] font-bold text-violet-200 hover:bg-violet-400/20 transition">CORRIDOR</button>
     <button id="terrainCollapse" class="chip px-2.5 py-1 text-[10px] font-bold text-slate-300 hover:bg-white/10 transition">HIDE</button>
   </header>
   <div class="relative grow mx-3 mb-3 rounded-xl overflow-hidden border border-white/10 bg-[#050b16]">
@@ -931,6 +942,9 @@ form.addEventListener('submit', async (ev) => {
     lastNavlog = result;
     presentNavLog(result);
     loadWindAdvice(result);
+    loadTafTimelines(result);
+    loadCloudStrip(result);
+    loadNotams(result);
     await loadTerrainFor(result);
   } catch (err) {
     showToast(`Flight plan failed: ${err.message}`, 'error');
@@ -1024,6 +1038,7 @@ class TerrainScene {
     const sun = new THREE.DirectionalLight(0xfff4de, 1.05);
     sun.position.set(-600, 900, 400);
     this.scene.add(sun);
+    this.sunLight = sun;
     const rim = new THREE.DirectionalLight(0x22d3ee, 0.35);
     rim.position.set(500, 200, -600);
     this.scene.add(rim);
@@ -1099,6 +1114,72 @@ class TerrainScene {
     this.camera.updateProjectionMatrix();
   }
 
+  addGates(gates) {
+    // gates: [{frac: 0..1 along corridor, label}] — vertical rings at cruise level
+    if (!this._spanX) return;
+    const ringGeo = new THREE.TorusGeometry(this._laneWidth * 0.52, 9, 10, 40);
+    for (const g of gates || []) {
+      if (!isFinite(g.frac)) continue;
+      const isDep = g.frac <= 0.001, isArr = g.frac >= 0.999;
+      const mat = new THREE.MeshBasicMaterial({
+        color: isDep ? 0x22d3ee : (isArr ? 0xa78bfa : 0xf59e0b),
+        transparent: true, opacity: 0.55,
+      });
+      const ring = new THREE.Mesh(ringGeo, mat);
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(g.frac * this._spanX, this._cruiseY, 0);
+      this.root.add(ring);
+
+      const sprite = this._makeLabelSprite(g.label || '');
+      sprite.position.set(g.frac * this._spanX, this._cruiseY + 150, 0);
+      this.root.add(sprite);
+    }
+  }
+
+  setSun(azimuthDeg, altitudeDeg) {
+    // azimuth measured clockwise from north; scene +x = east, +z = south
+    const az = azimuthDeg * Math.PI / 180, alt = Math.max(6, altitudeDeg) * Math.PI / 180;
+    const r = 1500;
+    this.sunLight.position.set(
+      Math.sin(az) * Math.cos(alt) * r,
+      Math.sin(alt) * r,
+      -Math.cos(az) * Math.cos(alt) * r,
+    );
+  }
+
+  setProgress(frac) {
+    if (!this._spanX) return;
+    if (frac === null || !isFinite(frac)) {
+      if (this._progressMarker) { this._progressMarker.visible = false; }
+      return;
+    }
+    if (!this._progressMarker) {
+      this._progressMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(26, 18, 18),
+        new THREE.MeshBasicMaterial({ color: 0xffa63d }),
+      );
+      this.root.add(this._progressMarker);
+    }
+    this._progressMarker.visible = true;
+    this._progressMarker.position.set(frac * this._spanX, this._cruiseY + 45, 0);
+  }
+
+  _makeLabelSprite(text) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 40px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(2,8,20,0.95)'; ctx.lineWidth = 8;
+    ctx.strokeText(text, 128, 32);
+    ctx.fillStyle = '#bae6fd';
+    ctx.fillText(text, 128, 32);
+    const tex = new THREE.CanvasTexture(c);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    spr.scale.set(190, 48, 1);
+    return spr;
+  }
+
   _applyCamera() {
     const { theta, phi } = this.spherical;
     const x = this.target.x + this.distance * Math.sin(phi) * Math.cos(theta);
@@ -1109,6 +1190,7 @@ class TerrainScene {
   }
 
   clear() {
+    this._progressMarker = null;
     while (this.root.children.length) {
       const child = this.root.children.pop();
       child.traverse?.(obj => {
@@ -1226,6 +1308,7 @@ class TerrainScene {
     this.root.add(arrPillar);
 
     const spanX = (cols - 1) * HORIZ_SCALE;
+    this._spanX = spanX; this._cruiseY = cruiseY; this._laneWidth = LANE_WIDTH;
     this.target.set(spanX / 2, Math.max(cruiseY * 0.55, 160), 0);
     this.distance = Math.max(2400, spanX * 0.85);
     this.spherical.theta = -0.95;
@@ -1272,6 +1355,18 @@ async function loadTerrainFor(navlog) {
       body: { waypoints: coords, cruise_altitude_ft: navlog.cruise_altitude_ft }
     });
     terrainScene.load(result.profile);
+
+    // waypoint gates across the corridor at each leg boundary
+    try {
+      const total = navlog.totals.distance_nm || 1;
+      let cum = 0;
+      const gates = [{ frac: 0, label: navlog.route[0] }];
+      for (const leg of navlog.legs) {
+        cum += (leg.distance_nm || 0);
+        gates.push({ frac: Math.min(1, cum / total), label: leg.to || '' });
+      }
+      terrainScene.addGates(gates);
+    } catch { /* gates are cosmetic */ }
 
     const banner = $('collisionBanner');
     if (result.collision_alert) {
@@ -1955,19 +2050,32 @@ function updateHud() {
     return;
   }
   // pick active leg: first leg not yet completed (distToEnd > 0), else nearest
-  let chosen = null, chosenProj = null;
-  for (const leg of lastNavlog.legs) {
+  let chosen = null, chosenProj = null, chosenIndex = -1;
+  let cumBefore = 0, chosenCum = 0;
+  for (let i = 0; i < lastNavlog.legs.length; i++) {
+    const leg = lastNavlog.legs[i];
     const [a, b] = legGeometryEnds(leg);
     const pr = projectOnLeg(a, b, gpsPosition);
     if (!pr) continue;
-    if (pr.distToEnd > 0) { chosen = leg; chosenProj = pr; break; }
+    if (pr.distToEnd > 0) {
+      chosen = leg; chosenProj = pr; chosenIndex = i;
+      chosenCum = cumBefore + Math.max(0, pr.along);
+      break;
+    }
+    cumBefore += (leg.distance_nm || 0);
   }
   if (!chosen && lastNavlog.legs.length) {
-    const [a, b] = legGeometryEnds(lastNavlog.legs[lastNavlog.legs.length - 1]);
-    chosen = lastNavlog.legs[lastNavlog.legs.length - 1];
+    const idx = lastNavlog.legs.length - 1;
+    const [a, b] = legGeometryEnds(lastNavlog.legs[idx]);
+    chosen = lastNavlog.legs[idx];
     chosenProj = projectOnLeg(a, b, gpsPosition);
+    chosenCum = cumBefore + (chosenProj ? chosenProj.total : 0);
   }
   if (!chosen || !chosenProj) return;
+
+  // whole-route progress fraction for the 3D corridor marker
+  const totalRouteNm = lastNavlog.totals.distance_nm || 1;
+  window.__richdaleRouteProgress = Math.max(0, Math.min(1, chosenCum / totalRouteNm));
   const [, toPt] = legGeometryEnds(chosen);
   const brg = bearingToDeg(gpsPosition[0], gpsPosition[1], toPt[0], toPt[1]);
   const gsKt = (typeof window.__richdaleGpsSpeedKt === 'number' && window.__richdaleGpsSpeedKt > 5)
@@ -1987,6 +2095,176 @@ function updateHud() {
 
 // expose GPS speed for the HUD
 window.__richdaleGpsSpeedKt = null;
+window.__richdaleRouteProgress = null;
+
+/* ========================= 3D CORRIDOR OVERLAY ============================= */
+
+const corridorOriginalParent = $('terrainCanvas').parentElement;
+let corridorOpen = false, corridorProgressTimer = null;
+
+$('corridorBtn').addEventListener('click', () => {
+  const overlay = $('corridorOverlay');
+  overlay.appendChild($('terrainCanvas'));
+  overlay.classList.remove('hidden');
+  corridorOpen = true;
+
+  // sun-accurate lighting from present position / route midpoint
+  let lat = gpsPosition ? gpsPosition[0] : (lastNavlog ? lastNavlog.legs[0].geometry[0][0] : 39.5);
+  let lon = gpsPosition ? gpsPosition[1] : (lastNavlog ? lastNavlog.legs[0].geometry[0][1] : -0.48);
+  const t = sunTimesUTC(lat, lon, new Date());
+  if (t.sunrise && t.sunset) {
+    const now = Date.now();
+    const dayFrac = Math.max(0, Math.min(1, (now - t.sunrise) / (t.sunset - t.sunrise)));
+    const az = 90 + 180 * dayFrac;                 // east -> west arc
+    const alt = Math.sin(Math.PI * dayFrac) * 62;  // noon-ish peak
+    terrainScene.setSun(az, alt);
+  }
+  setTimeout(() => terrainScene._resize(), 50);
+
+  clearInterval(corridorProgressTimer);
+  corridorProgressTimer = setInterval(() => {
+    terrainScene.setProgress(window.__richdaleRouteProgress);
+  }, 1500);
+});
+
+$('corridorClose').addEventListener('click', () => {
+  const overlay = $('corridorOverlay');
+  overlay.classList.add('hidden');
+  corridorOriginalParent.appendChild($('terrainCanvas'));
+  corridorOpen = false;
+  clearInterval(corridorProgressTimer);
+  setTimeout(() => terrainScene._resize(), 50);
+});
+
+/* ===================== TAF TIMELINE + CLOUDS + NOTAMS ====================== */
+
+const CAT_BG = { VFR: '#22c55e', MVFR: '#3b82f6', IFR: '#ef4444' };
+
+async function loadTafTimelines(navlog) {
+  const box = $('tafTimeline');
+  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])
+    .filter(i => /^[A-Z]{4}$/.test(i || ''))];
+  if (!icaos.length) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">TAF windows…</div>';
+  try {
+    const res = await api('/api/weather/taf/timeline', { method: 'POST', body: { icaos } });
+    let html = '<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300 mb-2">TAF validity windows</div>';
+    for (const icao of icaos) {
+      const tl = res.timelines[icao];
+      if (!tl || !tl.periods.length) {
+        html += `<div class="text-[11px] text-slate-500 mb-1">${icao}: no TAF available</div>`;
+        continue;
+      }
+      const starts = tl.periods.map(p => new Date(p.start).getTime());
+      const ends = tl.periods.map(p => new Date(p.end).getTime());
+      const t0 = Math.min(...starts), t1 = Math.max(...ends);
+      const pct = v => ((v - t0) / (t1 - t0)) * 100;
+      html += `<div class="mb-2">
+        <div class="text-[10px] text-slate-400 mb-1">${icao} <span class="text-slate-600">· ${new Date(t0).toISOString().substr(11,4)}Z→${new Date(t1).toISOString().substr(11,4)}Z</span></div>
+        <div class="relative w-full h-4 rounded overflow-hidden bg-white/5">`;
+      for (const p of tl.periods) {
+        const left = pct(new Date(p.start).getTime());
+        const width = Math.max(0.8, pct(new Date(p.end).getTime()) - left);
+        const color = CAT_BG[p.category] || '#64748b';
+        const isSub = /^(TEMPO|PROB|INTER|BECMG)/i.test(p.kind);
+        const tip = `${p.kind} ${p.category} · vis ${p.cavok ? 'CAVOK' : (p.visibility_m ? Math.round(p.visibility_m/1000)+'km' : '—')} · ceil ${p.ceiling_ft ?? '∞'}ft · ${p.wind || ''}${p.weather && p.weather.length ? ' · ' + p.weather.join(' ') : ''}`;
+        html += isSub
+          ? `<div title="${tip}" class="absolute top-0 h-[5px]" style="left:${left}%;width:${width}%;background:${color};opacity:.85"></div>`
+          : `<div title="${tip}" class="absolute bottom-0 h-full" style="left:${left}%;width:${width}%;background:${color};opacity:${p.category === 'IFR' ? .95 : .7}"></div>`;
+      }
+      html += `</div></div>`;
+    }
+    box.innerHTML = html;
+  } catch (err) {
+    box.innerHTML = `<div class="text-[11px] text-slate-500">TAF timeline unavailable: ${err.message}</div>`;
+  }
+}
+
+async function loadCloudStrip(navlog) {
+  const box = $('cloudStrip');
+  if (!navlog.legs.length) { box.classList.add('hidden'); return; }
+  const g = navlog.legs[Math.floor(navlog.legs.length / 2)].geometry;
+  const mid = g[Math.floor(g.length / 2)];
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">Cloud forecast…</div>';
+  try {
+    const res = await api('/api/weather/clouds', {
+      method: 'POST',
+      body: { points: [{ latitude: mid[0], longitude: mid[1] }] },
+    });
+    const hours = (res.profiles[0] && res.profiles[0].hours) || [];
+    if (!hours.length) { box.classList.add('hidden'); return; }
+    let cols = '';
+    hours.forEach((h, i) => {
+      const seg = pct => Math.max(0, Math.min(100, pct)) * 0.5; // half-height per layer stack
+      const low = seg(h.low_pct || 0), midP = seg(h.mid_pct || 0), high = seg(h.high_pct || 0);
+      const label = i % 3 === 0 ? `<div class="text-[8px] text-slate-500 text-center mt-0.5">${h.time.substr(11, 2)}Z</div>` : '<div class="h-[14px]"></div>';
+      cols += `<div class="flex-1 flex flex-col justify-end">
+        <div class="flex flex-col-reverse rounded-sm overflow-hidden" style="height:56px">
+          <div style="height:${low}%;background:#f59e0b"></div>
+          <div style="height:${midP}%;background:#94a3b8"></div>
+          <div style="height:${high}%;background:#38bdf8"></div>
+        </div>${label}</div>`;
+    });
+    box.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300">Cloud cover · next ${hours.length}h · route midpoint</div>
+        <div class="flex gap-2 text-[9px] text-slate-400">
+          <span><i class="inline-block h-2 w-2" style="background:#f59e0b"></i> LOW</span>
+          <span><i class="inline-block h-2 w-2" style="background:#94a3b8"></i> MID</span>
+          <span><i class="inline-block h-2 w-2" style="background:#38bdf8"></i> HIGH</span>
+        </div>
+      </div>
+      <div class="flex gap-1 items-end">${cols}</div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="text-[11px] text-slate-500">Cloud forecast unavailable.</div>`;
+  }
+}
+
+async function loadNotams(navlog) {
+  const box = $('notamList');
+  const pts = [];
+  for (const leg of navlog.legs) {
+    pts.push(leg.geometry[0]);
+    pts.push(leg.geometry[leg.geometry.length - 1]);
+  }
+  if (!pts.length) { box.classList.add('hidden'); return; }
+  const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+  const pad = 0.35;
+  const bboxStr = [
+    Math.max(-90, Math.min(...lats) - pad), Math.max(-180, Math.min(...lons) - pad),
+    Math.min(90, Math.max(...lats) + pad), Math.min(180, Math.max(...lons) + pad),
+  ].join(',');
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">NOTAM query…</div>';
+  try {
+    const res = await api(`/api/notam?bbox=${bboxStr}`);
+    if (!res.count) {
+      box.innerHTML = '<div class="text-[11px] text-slate-500">No active geo-located NOTAMs within 0.35° of your route (ENAIRE live feed).</div>';
+      return;
+    }
+    let html = `<div class="flex items-center justify-between mb-2">
+      <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300">NOTAMs along route</div>
+      <div class="chip px-2 py-0.5 text-[9px]">${res.count} active${res.expired_hidden ? ` · ${res.expired_hidden} expired hidden` : ''}</div>
+    </div>`;
+    for (const n of res.notams.slice(0, 14)) {
+      const short = (n.text || '').length > 170 ? n.text.slice(0, 170) + '…' : (n.text || '(no item E text)');
+      html += `<details class="mb-1.5 border-b border-white/5 pb-1">
+        <summary class="cursor-pointer text-[11px] text-orange-200 font-bold hover:text-orange-100">
+          ${n.id || '?'} <span class="text-slate-500 font-normal">${n.effective || ''} → ${n.expires || ''}</span>
+        </summary>
+        <p class="text-[10px] leading-relaxed text-slate-300 mt-1 whitespace-pre-wrap">${short}</p>
+      </details>`;
+    }
+    box.innerHTML = html;
+  } catch (err) {
+    box.innerHTML = `<div class="text-[11px] text-slate-500">NOTAM feed unavailable: ${err.message}</div>`;
+  }
+}
+
+// wire the three loaders into every successful route computation
+// (called from the route-submit success handler alongside loadWindAdvice)
 </script>
 </body>
 </html>

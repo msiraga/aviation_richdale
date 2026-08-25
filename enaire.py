@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import httpx
 
@@ -653,3 +653,72 @@ class EnaireAd2Service:
             if "pdf" not in content_type.lower() and not response.content[:5] == b"%PDF-":
                 raise Ad2DocumentUnavailable(f"document at {url} is not a PDF ({content_type or 'unknown type'})")
             return response.content
+
+
+class EnaireNotamService:
+    """Live NOTAMs from ENAIRE's public Insignia ArcGIS FeatureServer.
+
+    The service exposes geo-located Spanish NOTAMs with full item E text and
+    effective/expire windows, keyless. Responses are cached briefly because
+    NOTAM data updates continuously but preflight use tolerates minutes.
+    """
+
+    QUERY_URL = (
+        "https://servais.enaire.es/insignias/rest/services/NOTAM/"
+        "NOTAM_APP_V3/FeatureServer/0/query"
+    )
+    CACHE_TTL_S = 300.0
+    MAX_RECORDS = 120
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple[float, float, float, float], tuple[float, list[dict[str, Any]]]] = {}
+
+    async def query(self, south: float, west: float, north: float, east: float) -> list[dict[str, Any]]:
+        key = (round(south, 1), round(west, 1), round(north, 1), round(east, 1))
+        now = time.monotonic()
+        cached = self._cache.get(key)
+        if cached and now - cached[0] < self.CACHE_TTL_S:
+            return cached[1]
+
+        params = {
+            "f": "json",
+            "where": "1=1",
+            "outFields": "notamId,itemB,itemC,itemE",
+            "geometry": f"{west:.4f},{south:.4f},{east:.4f},{north:.4f}",
+            "geometryType": "esriGeometryEnvelope",
+            "inSR": "4326",
+            "spatialRel": "esriSpatialRelIntersects",
+            "outSR": "4326",
+            "orderByFields": "itemB DESC",
+            "resultRecordCount": str(self.MAX_RECORDS),
+        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aviation-richdale/1.0"}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0), headers=headers) as client:
+            response = await client.get(self.QUERY_URL, params=params)
+            response.raise_for_status()
+            body = response.json()
+
+        now_utc = datetime.now(timezone.utc)
+        notams: list[dict[str, Any]] = []
+        for feature in body.get("features", []):
+            attrs = feature.get("attributes") or {}
+            geom = feature.get("geometry") or {}
+            expires_raw = attrs.get("itemC")
+            try:
+                # ArcGIS epoch dates arrive as milliseconds since 1970.
+                expires = datetime.fromtimestamp(expires_raw / 1000.0, tz=timezone.utc) if expires_raw else None
+            except (ValueError, OSError, OverflowError):
+                expires = None
+            notams.append({
+                "id": attrs.get("notamId"),
+                "text": (attrs.get("itemE") or "").strip(),
+                "effective": attrs.get("itemBstr"),
+                "expires": attrs.get("itemCstr"),
+                "expires_epoch_ms": expires_raw,
+                "expired": bool(expires and expires < now_utc),
+                "latitude": geom.get("y"),
+                "longitude": geom.get("x"),
+            })
+
+        self._cache[key] = (now, notams)
+        return notams

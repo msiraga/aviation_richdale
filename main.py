@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import navigation
 from airdata import AirDataError, AirReferenceService, EnaireChartTileProxy
-from enaire import EnaireAipRepository, EnaireAd2Service, EnaireError
+from enaire import EnaireAipRepository, EnaireAd2Service, EnaireError, EnaireNotamService
 from navigation import (
     LatLon,
     apply_magnetic_variation,
@@ -51,6 +51,8 @@ from weather import (
     UnknownStation,
     WeatherServiceError,
     WindsAloftEngine,
+    fetch_cloud_profile,
+    serialize_taf_timeline,
 )
 
 logging.basicConfig(
@@ -201,6 +203,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.airref = AirReferenceService(cache_dir=DATA_DIR / "cache" / "ourairports")
     app.state.chart_proxy = EnaireChartTileProxy(cache_dir=DATA_DIR / "cache")
+    app.state.notam = EnaireNotamService()
     app.state.wmm_model = None
     log.info("engines initialized; data directory ready")
     yield
@@ -689,6 +692,51 @@ async def post_wind_grid(body: WindGridRequest):
         "recommended_altitude_ft": recommended,
         "tas_kt": body.tas_kt,
     })
+
+
+class TafTimelineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    icaos: list[str] = Field(min_length=1, max_length=8)
+
+
+@app.post("/api/weather/taf/timeline")
+async def post_taf_timeline(body: TafTimelineRequest):
+    """TAF periods serialized as validity-bar segments per station."""
+    icaos = [i.strip().upper() for i in body.icaos]
+    reports = await app.state.weather.latest_tafs(icaos)
+    timelines = {rep.icao: serialize_taf_timeline(rep) for rep in reports}
+    return ok_payload({"timelines": timelines})
+
+
+class CloudProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[dict[str, float]] = Field(min_length=1, max_length=4)
+
+
+@app.post("/api/weather/clouds")
+async def post_cloud_profile(body: CloudProfileRequest):
+    profiles = []
+    for p in body.points:
+        lat, lon = p.get("latitude"), p.get("longitude")
+        if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 180:
+            raise BadRequest("each point needs valid latitude/longitude")
+        try:
+            profiles.append(await fetch_cloud_profile(float(lat), float(lon)))
+        except httpx.HTTPError as exc:
+            log.info("cloud profile failed at %.2f,%.2f: %s", lat, lon, exc)
+            profiles.append({"latitude": lat, "longitude": lon, "hours": [], "error": "source unavailable"})
+    return ok_payload({"profiles": profiles})
+
+
+@app.get("/api/notam")
+async def get_notams(bbox: str):
+    south, west, north, east = _bbox_or_bad(bbox)
+    notams = await app.state.notam.query(south, west, north, east)
+    active = [n for n in notams if not n["expired"]]
+    return ok_payload({"notams": active, "count": len(active),
+                       "expired_hidden": len(notams) - len(active)})
 
 
 @app.post("/api/terrain/profile")
