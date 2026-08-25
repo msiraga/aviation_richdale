@@ -303,6 +303,8 @@ async def get_variation(engine_state: Any, lat: float, lon: float, alt_ft: float
 async def index(request: Request):
     openaip_key = os.environ.get("OPENAIP_API_KEY")
     ofm_template = os.environ.get("OPENFLIGHTMAPS_TILE_URL")
+    build_candidates = [Path(__file__), TEMPLATES_DIR / "index.html"]
+    build_stamp = max(int(p.stat().st_mtime) for p in build_candidates)
     context = {
         "request": request,
         "openaip_api_key": openaip_key or "",
@@ -312,6 +314,7 @@ async def index(request: Request):
         "map_bbox_ne": DEFAULT_MAP_BBOX_NE,
         "crosswind_limit_kt": CROSSWIND_LIMIT_KT,
         "safety_ceiling_ft": SAFETY_CEILING_FT,
+        "build_id": f"b{datetime.fromtimestamp(build_stamp, tz=timezone.utc).strftime('%y%m%d.%H%M')}",
     }
     return templates.TemplateResponse(request, "index.html", context)
 
