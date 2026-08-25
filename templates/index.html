@@ -254,6 +254,7 @@ tailwind.config = {
     <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">CHART</button>
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
     <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RAIN</button>
+    <button id="earthBtnHeader" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" title="3D Earth with great-circle route">&#127758;</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
 
@@ -287,6 +288,22 @@ tailwind.config = {
   <div class="absolute top-5 left-5 text-[10px] font-mono tracking-widest text-slate-400 pointer-events-none select-none">
     3D CORRIDOR · SRTM TERRAIN · drag orbit · RMB pan · wheel zoom
   </div>
+</div>
+
+<div id="earthOverlay" class="hidden fixed inset-0 z-[46] bg-black/95 backdrop-blur-md">
+  <canvas id="earthCanvas" class="absolute inset-0 w-full h-full block" style="touch-action:none;cursor:grab"></canvas>
+  <div class="absolute top-5 left-5 text-[10px] font-mono tracking-widest text-cyan-200 pointer-events-none select-none">
+    EARTH · GREAT CIRCLE ITINERARY
+  </div>
+  <div class="absolute top-4 right-4 z-10 flex gap-2">
+    <button id="earthSpin" class="chip px-3 py-1.5 text-xs font-bold">SPIN ON</button>
+    <button id="earthClose" class="chip px-3 py-1.5 text-xs font-bold text-cyan-100 hover:bg-cyan-400/20">CLOSE &#10005;</button>
+  </div>
+  <div class="absolute bottom-4 left-5 right-5 flex justify-between text-[9px] font-mono tracking-widest text-slate-500 pointer-events-none select-none">
+    <span>DRAG ROTATE &middot; WHEEL / PINCH ZOOM</span>
+    <span>AMBER ARC = SHORTEST PATH OVER THE CURVED EARTH</span>
+  </div>
+  <div id="earthLoading" class="absolute inset-0 hidden place-items-center text-xs tracking-[0.3em] text-slate-500 select-none">LOADING EARTH&hellip;</div>
 </div>
 
 <div id="groundPanel" class="glass p-3">
@@ -570,6 +587,7 @@ tailwind.config = {
       <h2 class="text-[12px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Terrain Profile 3D</h2>
       <p class="text-[9px] text-slate-500 tracking-wide">NASA SRTM DEM · <span class="text-neon-cyan">cyan plane = cruise + 1000ft safety ceiling</span></p>
     </div>
+    <button id="earthBtn" class="chip px-2.5 py-1 text-[10px] font-bold text-cyan-200 hover:bg-cyan-400/20 transition">EARTH</button>
     <button id="corridorBtn" class="chip px-2.5 py-1 text-[10px] font-bold text-violet-200 hover:bg-violet-400/20 transition">CORRIDOR</button>
     <button id="terrainCollapse" class="chip px-2.5 py-1 text-[10px] font-bold text-slate-300 hover:bg-white/10 transition">HIDE</button>
   </header>
@@ -2707,6 +2725,307 @@ $('corridorClose').addEventListener('click', () => {
   corridorOpen = false;
   clearInterval(corridorProgressTimer);
   setTimeout(() => terrainScene._resize(), 50);
+});
+
+/* ====================== 3D EARTH / GREAT-CIRCLE VIEW ======================= */
+
+const earthView = {
+  ready: false, open: false, raf: null,
+  renderer: null, scene: null, camera: null,
+  globeGroup: null, routeLine: null, wpGroup: null, gpsDot: null, sunLight: null,
+  rotX: -0.35, rotY: 0.6, dist: 2.7,
+  dragging: false, lastPX: 0, lastPY: 0, pinchD: 0,
+  idleSince: 0, spinOn: true,
+};
+
+function earthInitOnce() {
+  if (earthView.ready) return;
+  const canvas = $('earthCanvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  earthView.renderer = renderer;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x01030a);
+  earthView.scene = scene;
+
+  // starfield shell
+  const starPos = [];
+  for (let i = 0; i < 1400; i++) {
+    const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    const rr = 38 + Math.random() * 8;
+    starPos.push(rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph), rr * Math.sin(ph) * Math.sin(th));
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x93b4dd, size: 0.09 })));
+
+  earthView.camera = new THREE.PerspectiveCamera(42, 1, 0.01, 120);
+  scene.add(new THREE.AmbientLight(0x8899bb, 0.55));
+  earthView.sunLight = new THREE.DirectionalLight(0xfff3d6, 1.25);
+  scene.add(earthView.sunLight);
+
+  const globe = new THREE.Group();
+  earthView.globeGroup = globe;
+  scene.add(globe);
+
+  const surfaceMat = new THREE.MeshPhongMaterial({ color: 0x123456, shininess: 6 });
+  globe.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 96), surfaceMat));
+
+  // graticule (visible under the texture too — reads as "instrument", not decoration)
+  const gratMat = new THREE.LineBasicMaterial({ color: 0x3ba7ff, transparent: true, opacity: 0.14 });
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const pts = [];
+    for (let lon = -180; lon <= 180; lon += 4) pts.push(llToVec(lat, lon, 1.002));
+    globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gratMat));
+  }
+  for (let lon = -180; lon < 180; lon += 30) {
+    const pts = [];
+    for (let lat = -90; lat <= 90; lat += 4) pts.push(llToVec(lat, lon, 1.002));
+    globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gratMat));
+  }
+
+  // NASA Blue Marble texture served keyless from the three-globe package on jsDelivr
+  $('earthLoading').style.display = 'grid';
+  new THREE.TextureLoader().load(
+    'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg',
+    tex => {
+      surfaceMat.map = tex; surfaceMat.color.set(0xffffff); surfaceMat.needsUpdate = true;
+      $('earthLoading').style.display = 'none';
+    },
+    undefined,
+    () => {
+      showToast('Earth texture unreachable — showing instrument globe.', 'warn', 6000);
+      $('earthLoading').style.display = 'none';
+    },
+  );
+
+  // waypoint markers + labels live here; rebuilt per route
+  earthView.wpGroup = new THREE.Group();
+  globe.add(earthView.wpGroup);
+  earthView.gpsDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffa63d }),
+  );
+  earthView.gpsDot.visible = false;
+  globe.add(earthView.gpsDot);
+
+  bindEarthControls(canvas);
+  window.addEventListener('resize', () => { if (earthView.open) sizeEarthRenderer(); });
+  earthView.ready = true;
+}
+
+function llToVec(lat, lon, r) {
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lon + 180) * Math.PI / 180;
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+    r * Math.cos(phi),
+    r * Math.sin(phi) * Math.sin(theta),
+  );
+}
+
+function greatCirclePoints(a, b, lift) {
+  const va = llToVec(a[0], a[1], 1), vb = llToVec(b[0], b[1], 1);
+  const omega = va.angleTo(vb);
+  if (omega < 1e-6) return [va.clone().multiplyScalar(1 + lift)];
+  const steps = Math.max(24, Math.ceil(omega * 48));
+  const axis = new THREE.Vector3().crossVectors(va, vb).normalize();
+  const out = [];
+  for (let i = 0; i <= steps; i++) {
+    const f = i / steps;
+    const p = va.clone().applyAxisAngle(axis, omega * f).normalize();
+    out.push(p.multiplyScalar(1 + lift));
+  }
+  return out;
+}
+
+function updateEarthRoute() {
+  if (!earthView.ready || !lastNavlog) return;
+  if (earthView.routeLine) {
+    earthView.globeGroup.remove(earthView.routeLine);
+    earthView.routeLine.geometry.dispose();
+    earthView.routeLine = null;
+  }
+  earthView.wpGroup.clear();
+
+  // true waypoints: departure + each leg terminus
+  const wps = [];
+  if (lastNavlog.legs.length && lastNavlog.legs[0].geometry.length) {
+    const g0 = lastNavlog.legs[0].geometry[0];
+    wps.push({ lat: g0[0], lon: g0[1], label: lastNavlog.route[0] || '' });
+  }
+  for (const leg of lastNavlog.legs) {
+    const g = leg.geometry[leg.geometry.length - 1];
+    if (!g) continue;
+    wps.push({ lat: g[0], lon: g[1], label: leg.to || '' });
+  }
+  if (wps.length < 2) return;
+
+  const allPts = [];
+  for (let i = 0; i < wps.length - 1; i++) {
+    allPts.push(...greatCirclePoints([wps[i].lat, wps[i].lon], [wps[i + 1].lat, wps[i + 1].lon], 0.015));
+  }
+  earthView.routeLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(allPts),
+    new THREE.LineBasicMaterial({ color: 0xffb703 }),
+  );
+  earthView.globeGroup.add(earthView.routeLine);
+
+  for (const wp of wps) {
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.011, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0x67e8f9 }),
+    );
+    dot.position.copy(llToVec(wp.lat, wp.lon, 1.005));
+    earthView.wpGroup.add(dot);
+    if (wp.label) {
+      const sprite = makeGlobeLabel(wp.label);
+      sprite.position.copy(llToVec(wp.lat, wp.lon, 1.05));
+      earthView.wpGroup.add(sprite);
+    }
+  }
+
+  // frame the route: centre rotation on the midpoint, zoom to route span
+  const midLat = wps.reduce((s, w) => s + w.lat, 0) / wps.length;
+  const midLon = wps.reduce((s, w) => s + w.lon, 0) / wps.length;
+  earthView.rotY = Math.atan2(
+    llToVec(midLat, midLon, 1).x, llToVec(midLat, midLon, 1).z,
+  ) - Math.PI;   // bring midpoint to face the camera
+  let spanDeg = 0;
+  for (let i = 0; i < wps.length; i++)
+    for (let j = i + 1; j < wps.length; j++) {
+      spanDeg = Math.max(spanDeg, Math.hypot(wps[i].lat - wps[j].lat, wps[i].lon - wps[j].lon));
+    }
+  earthView.dist = spanDeg > 40 ? 3.4 : spanDeg > 12 ? 2.6 : 1.9;
+}
+
+function makeGlobeLabel(text) {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 44px system-ui, sans-serif';
+  const w = Math.ceil(ctx.measureText(text).width) + 20;
+  c.width = w; c.height = 64;
+  const ctx2 = c.getContext('2d');
+  ctx2.font = 'bold 44px system-ui, sans-serif';
+  ctx2.fillStyle = 'rgba(2,8,20,0.75)';
+  ctx2.fillRect(0, 0, w, 64);
+  ctx2.fillStyle = '#a5f3fc';
+  ctx2.textBaseline = 'middle';
+  ctx2.fillText(text, 10, 34);
+  const tex = new THREE.CanvasTexture(c);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  sprite.scale.set(w / 64 * 0.09, 0.09, 1);
+  return sprite;
+}
+
+function sizeEarthRenderer() {
+  const el = $('earthCanvas');
+  const w = el.clientWidth || window.innerWidth, h = el.clientHeight || window.innerHeight;
+  earthView.renderer.setSize(w, h, false);
+  earthView.camera.aspect = w / h;
+  earthView.camera.updateProjectionMatrix();
+}
+
+function bindEarthControls(canvas) {
+  canvas.addEventListener('pointerdown', e => {
+    earthView.dragging = true; earthView.lastPX = e.clientX; earthView.lastPY = e.clientY;
+    earthView.idleSince = performance.now();
+    canvas.style.cursor = 'grabbing'; canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!earthView.dragging) return;
+    earthView.rotY -= (e.clientX - earthView.lastPX) * 0.005;
+    earthView.rotX = Math.max(-1.35, Math.min(1.35, earthView.rotX + (e.clientY - earthView.lastPY) * 0.005));
+    earthView.lastPX = e.clientX; earthView.lastPY = e.clientY;
+    earthView.idleSince = performance.now();
+  });
+  const stop = () => { earthView.dragging = false; canvas.style.cursor = 'grab'; };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    earthView.dist = Math.max(1.35, Math.min(7, earthView.dist + e.deltaY * 0.0016));
+    earthView.idleSince = performance.now();
+  }, { passive: false });
+  // two-finger pinch
+  let pinchPts = new Map();
+  canvas.addEventListener('pointerdown', e => pinchPts.set(e.pointerId, [e.clientX, e.clientY]));
+  canvas.addEventListener('pointermove', e => {
+    if (!pinchPts.has(e.pointerId)) return;
+    pinchPts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinchPts.size === 2) {
+      const [p1, p2] = [...pinchPts.values()];
+      const d = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+      if (earthView.pinchD) {
+        earthView.dist = Math.max(1.35, Math.min(7, earthView.dist * (earthView.pinchD / d)));
+      }
+      earthView.pinchD = d;
+      earthView.idleSince = performance.now();
+    }
+  });
+  const clearPinch = e => { pinchPts.delete(e.pointerId); if (pinchPts.size < 2) earthView.pinchD = 0; };
+  canvas.addEventListener('pointerup', clearPinch);
+  canvas.addEventListener('pointercancel', clearPinch);
+}
+
+function subsolarPoint(now) {
+  const doy = (now - new Date(Date.UTC(now.getUTCFullYear(), 0, 0))) / 86400000;
+  const decl = 23.44 * Math.sin(2 * Math.PI * (doy - 81) / 365);
+  const utcH = now.getUTCHours() + now.getUTCMinutes() / 60;
+  const lon = -15 * (utcH - 12);
+  return [decl, ((lon + 540) % 360) - 180];
+}
+
+function earthFrame() {
+  if (!earthView.open) return;
+  earthView.raf = requestAnimationFrame(earthFrame);
+  // idle auto-spin
+  if (earthView.spinOn && !earthView.dragging && performance.now() - earthView.idleSince > 4000) {
+    earthView.rotY += 0.0012;
+  }
+  const g = earthView.globeGroup;
+  g.rotation.set(0, 0, 0);
+  g.rotateY(earthView.rotY);
+  g.rotateX(earthView.rotX);
+  const cam = earthView.camera;
+  cam.position.set(0, 0, earthView.dist);
+  cam.lookAt(0, 0, 0);
+  // real-time sun: light from the actual subsolar point
+  const [ssLat, ssLon] = subsolarPoint(new Date());
+  earthView.sunLight.position.copy(llToVec(ssLat, ssLon, 10));
+  earthView.renderer.render(earthView.scene, cam);
+}
+
+$('earthBtn')?.addEventListener('click', openEarthView);
+$('earthBtnHeader')?.addEventListener('click', openEarthView);
+
+function openEarthView() {
+  earthInitOnce();
+  $('earthOverlay').classList.remove('hidden');
+  earthView.open = true;
+  sizeEarthRenderer();
+  updateEarthRoute();
+  cancelAnimationFrame(earthView.raf);
+  earthFrame();
+}
+
+// live position marker on the globe (single interval, guarded by open state)
+setInterval(() => {
+  if (!earthView.ready || !earthView.open || !gpsPosition) return;
+  earthView.gpsDot.visible = true;
+  earthView.gpsDot.position.copy(llToVec(gpsPosition[0], gpsPosition[1], 1.01));
+}, 1500);
+
+$('earthClose').addEventListener('click', () => {
+  $('earthOverlay').classList.add('hidden');
+  earthView.open = false;
+  cancelAnimationFrame(earthView.raf);
+});
+
+$('earthSpin').addEventListener('click', () => {
+  earthView.spinOn = !earthView.spinOn;
+  $('earthSpin').textContent = earthView.spinOn ? 'SPIN ON' : 'SPIN OFF';
 });
 
 /* ===================== TAF TIMELINE + CLOUDS + NOTAMS ====================== */
