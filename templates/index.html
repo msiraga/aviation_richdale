@@ -171,6 +171,7 @@ tailwind.config = {
   </div>
 
   <div class="glass pointer-events-auto flex items-center gap-2 px-3 py-2">
+    <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">PLAN</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
     <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
@@ -1201,6 +1202,18 @@ const GpsManager = (() => {
 })();
 
 $('gpsToggle').addEventListener('click', () => GpsManager.toggle());
+
+const composerSidebar = $('sidebar');
+setTimeout(() => {
+  composerSidebar.classList.remove('sidebar-enter');
+  composerSidebar.classList.add('sidebar-visible');
+}, 450);
+$('composerToggle').addEventListener('click', () => {
+  const shown = composerSidebar.classList.contains('sidebar-visible');
+  composerSidebar.classList.toggle('sidebar-enter', shown);
+  composerSidebar.classList.toggle('sidebar-visible', !shown);
+});
+
 window.addEventListener('online', updateLinkStatus);
 
 setTimeout(() => {
