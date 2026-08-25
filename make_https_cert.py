@@ -2,7 +2,11 @@
 
 Creates a private CA plus a server certificate covering localhost and the
 machine's LAN address, writing everything under data/certs/ (git-ignored).
-Run:  python make_https_cert.py [lan-ip]
+The CA is created once and REUSED on later runs, so refreshing the LAN IP
+does not invalidate the profile already trusted on the iPhone. Force a new
+CA (requires reinstalling the trust profile) with --new-ca.
+
+Run:  python make_https_cert.py [lan-ip] [--new-ca]
 """
 
 import datetime as dt
@@ -24,22 +28,16 @@ def build_name(common_name: str) -> x509.Name:
     return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
 
 
-def main() -> None:
-    lan_ip = sys.argv[1] if len(sys.argv) > 1 else detect_lan_ip()
-
-    now = dt.datetime.now(dt.timezone.utc)
-    not_before = now - dt.timedelta(days=1)
-    not_after = now + dt.timedelta(days=825)
-
-    ca_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
-    ca_cert = (
+def build_ca_cert(key: rsa.RSAPrivateKey, now: dt.datetime) -> x509.Certificate:
+    """Self-signed CA certificate with modern SKI/AKI extensions."""
+    return (
         x509.CertificateBuilder()
         .subject_name(build_name(CA_COMMON_NAME))
         .issuer_name(build_name(CA_COMMON_NAME))
-        .public_key(ca_key.public_key())
+        .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(not_before)
-        .not_valid_after(not_after)
+        .not_valid_before(now - dt.timedelta(days=1))
+        .not_valid_after(now + dt.timedelta(days=825))
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
         .add_extension(
             x509.KeyUsage(
@@ -49,8 +47,55 @@ def main() -> None:
             ),
             critical=True,
         )
-        .sign(ca_key, hashes.SHA256())
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()), critical=False
+        )
+        .sign(key, hashes.SHA256())
     )
+
+
+def load_or_create_ca(force_new: bool = False):
+    ca_key_path = OUT_DIR / "ca.key.pem"
+    ca_cert_path = OUT_DIR / "ca.crt.pem"
+    now = dt.datetime.now(dt.timezone.utc)
+
+    if not force_new and ca_key_path.exists() and ca_cert_path.exists():
+        try:
+            key = serialization.load_pem_private_key(ca_key_path.read_bytes(), password=None)
+            print("Reusing existing CA key (iPhone stays trusted)")
+            # Rebuild the self-signed CA certificate around the SAME key so
+            # strict verifiers get a CA carrying SKI/AKI extensions.
+            cert = build_ca_cert(key, now)
+            ca_cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+            return key, cert
+        except (ValueError, TypeError) as exc:
+            print(f"Could not reuse existing CA ({exc}); generating a new one")
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+    cert = build_ca_cert(key, now)
+    ca_cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    ca_key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return key, cert
+
+
+def main() -> None:
+    force_new_ca = "--new-ca" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    lan_ip = args[0] if args else detect_lan_ip()
+
+    now = dt.datetime.now(dt.timezone.utc)
+
+    ca_key, ca_cert = load_or_create_ca(force_new=force_new_ca)
 
     server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     san_entries: list[x509.GeneralName] = [
@@ -66,8 +111,8 @@ def main() -> None:
         .issuer_name(ca_cert.subject)
         .public_key(server_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(not_before)
-        .not_valid_after(not_after)
+        .not_valid_before(now - dt.timedelta(days=1))
+        .not_valid_after(now + dt.timedelta(days=825))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(
             x509.KeyUsage(
@@ -81,11 +126,16 @@ def main() -> None:
             x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
         )
         .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(server_key.public_key()), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
+        )
         .sign(ca_key, hashes.SHA256())
     )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "ca.crt.pem").write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
     (OUT_DIR / "server.key.pem").write_bytes(
         server_key.private_bytes(
             serialization.Encoding.PEM,
