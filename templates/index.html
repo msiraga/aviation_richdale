@@ -205,10 +205,20 @@ tailwind.config = {
     pointer-events: none; white-space: nowrap;
   }
   /* cockpit control bar: single swipeable row so every tool stays visible */
+  /* cockpit control bar: wraps on laptops so every tool shows; swipes on phones */
   .chipbar { display: flex; align-items: center; gap: .375rem; overflow-x: auto;
              -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .chipbar::-webkit-scrollbar { display: none; }
   .chipbar > * { flex: 0 0 auto; }
+  @media (min-width: 900px) {
+    .chipbar { flex-wrap: wrap; overflow-x: visible; row-gap: .35rem; justify-content: flex-end; }
+  }
+  .scroll-hint { position: absolute; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;
+    line-height: 20px; text-align: center; border-radius: 9999px; font-size: 14px; color: #e2e8f0;
+    background: rgba(2,8,20,.75); box-shadow: 0 0 8px rgba(0,0,0,.5); opacity: 0; transition: opacity .25s;
+    pointer-events: none; z-index: 2; }
+  .scroll-hint.left { left: 4px; } .scroll-hint.right { right: 4px; }
+  .scroll-hint.show { opacity: .95; }
   #helpSheet dl div { border-top: 1px solid rgba(255,255,255,.06); }
   /* ground (taxi) view card — bottom-left so it never stacks on Guardian */
   #groundPanel { position: absolute; left: 12px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
@@ -260,7 +270,9 @@ tailwind.config = {
   </div>
 
   <!-- cockpit control bar: grouped by purpose, planning tools live in the panel -->
-  <div class="glass pointer-events-auto chipbar px-3 py-2 justify-end max-w-[calc(100vw-1rem)]">
+  <div class="glass pointer-events-auto relative px-3 py-2 max-w-[min(100vw-1rem,calc(100vw-300px))]">
+    <span id="scrL" class="scroll-hint left">‹</span><span id="scrR" class="scroll-hint right">›</span>
+    <div id="chipBar" class="chipbar justify-end">
     <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition shrink-0">PLAN</button>
 
     <span class="zone-label" id="mapZoneLabel" title="cycle map style (same as the DARK/LIGHT/SAT button)" style="cursor:pointer">MAP</span>
@@ -292,6 +304,7 @@ tailwind.config = {
       <span id="linkDot" class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
       <span class="text-[10px] font-semibold tracking-wider text-slate-400" id="linkLabel">LINK</span>
     </div>
+    </div><!-- /chipBar -->
   </div>
 </header>
 
@@ -3841,6 +3854,19 @@ $('sosCopy').addEventListener('click', async () => {
 
 $('helpBtn')?.addEventListener('click', () => $('helpSheet').classList.remove('hidden'));
 $('helpClose')?.addEventListener('click', () => $('helpSheet').classList.add('hidden'));
+
+// ‹ › hints whenever the chip bar actually overflows
+function updateScrollHints() {
+  const el = $('chipBar');
+  if (!el) return;
+  const overflow = el.scrollWidth - el.clientWidth > 8;
+  $('scrL').classList.toggle('show', overflow && el.scrollLeft > 4);
+  $('scrR').classList.toggle('show', overflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+}
+$('chipBar')?.addEventListener('scroll', updateScrollHints, { passive: true });
+window.addEventListener('resize', updateScrollHints);
+setTimeout(updateScrollHints, 300);
+setInterval(updateScrollHints, 2000);
 
 /* ==================== FINAL APPROACH MODE (Tier-1 pack) ==================== */
 
