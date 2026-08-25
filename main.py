@@ -218,6 +218,22 @@ app = FastAPI(
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+_FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect width='32' height='32' rx='7' fill='#04070f'/>"
+    "<path d='M6 23 L13 15 L18.5 18 L26 9' stroke='#22d3ee' stroke-width='2.6' "
+    "fill='none' stroke-linecap='round' stroke-linejoin='round'/>"
+    "<circle cx='26' cy='9' r='2.6' fill='#a78bfa'/>"
+    "</svg>"
+)
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    from fastapi.responses import Response
+    return Response(content=_FAVICON_SVG, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
 
 @app.exception_handler(ApiError)
 async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:

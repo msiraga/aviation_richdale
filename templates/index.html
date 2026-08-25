@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>RICHDALE // VFR Situational Awareness</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.ico">
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -1223,6 +1224,7 @@ const GpsManager = (() => {
   let watching = false;
   let watchId = null;
   let trail = [];
+  let acqNoticeTimer = null;
   const QUEUE_KEY = 'richdale_gps_queue_v1';
 
   function readQueue() {
@@ -1322,6 +1324,7 @@ const GpsManager = (() => {
     }
 
     setStatus('bg-emerald-400 pulse-dot', 'GPS LIVE');
+    if (acqNoticeTimer) { clearTimeout(acqNoticeTimer); acqNoticeTimer = null; }
   }
 
   function handleError(err) {
@@ -1343,6 +1346,7 @@ const GpsManager = (() => {
       if (watching) {
         navigator.geolocation.clearWatch(watchId);
         watching = false;
+        if (acqNoticeTimer) { clearTimeout(acqNoticeTimer); acqNoticeTimer = null; }
         marker.remove();
         setAccuracyRing(0, 0, NaN);
         trail = [];
@@ -1357,6 +1361,13 @@ const GpsManager = (() => {
       });
       watching = true;
       setStatus('bg-amber-400 pulse-dot', 'GPS ACQ…');
+      if (acqNoticeTimer) clearTimeout(acqNoticeTimer);
+      acqNoticeTimer = setTimeout(() => {
+        if (!watching) return;
+        showToast(
+          'Still no fix. Phones/tablets get GNSS outdoors in seconds; most laptops and desktops have no GPS receiver at all and can stay "ACQ" forever.',
+          'warn', 12000);
+      }, 18000);
       flushQueue();
     },
   };
