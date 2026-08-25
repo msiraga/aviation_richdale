@@ -271,6 +271,33 @@ class GroundReferenceService:
             "runways": rwys[:8],
         }
 
+    async def nearby_far(self, lat: float, lon: float, nm: float) -> list[dict[str, Any]] | None:
+        """All paved-runway fields within nm, nearest first (Guardian search set)."""
+        async with self._lock:
+            airports = await _load_airports(self.cache_dir)
+            runways = await _load_runways(self.cache_dir)
+
+        by_ident: dict[str, list[dict[str, Any]]] = {}
+        for r in runways:
+            by_ident.setdefault(r["airport_ident"], []).append(r)
+        usable = {i for i, rwys in by_ident.items() if any(r["length_m"] >= 600 for r in rwys)}
+
+        out: list[tuple[float, AirportRecord]] = []
+        for a in airports:
+            if a.ident not in usable:
+                continue
+            d = haversine_nm(lat, lon, a.latitude_deg, a.longitude_deg)
+            if d <= nm:
+                out.append((d, a))
+        out.sort(key=lambda t: t[0])
+
+        entries: list[dict[str, Any]] = []
+        for d, a in out[:12]:
+            rwys = [r for r in by_ident.get(a.ident, []) if r["le_lat"] is not None or r["le_heading_t"] is not None]
+            rwys.sort(key=lambda r: -(r["length_m"]))
+            entries.append({"airport": a.to_dict(), "distance_nm": round(d, 2), "runways": rwys[:6]})
+        return entries or None
+
 
 class AirReferenceService:
     """Bbox-filtered airport and navaid lookups over the cached datasets."""

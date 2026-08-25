@@ -207,6 +207,8 @@ tailwind.config = {
   #groundPanel { position: absolute; left: 12px; top: 84px; z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
   #groundPanel.show { display: block; }
   #groundCanvas { width: 100%; height: 150px; display: block; border-radius: 10px; background: rgba(2,8,20,.55); }
+  #guardPanel { position: absolute; left: 12px; top: 84px; z-index: 26; width: 320px; max-width: calc(100vw - 24px); display: none; }
+  #guardPanel.show { display: block; }
   .wx-dot { width: 9px; height: 9px; border-radius: 9999px; display: inline-block; margin-right: 6px; }
 
   /* wind advice card inside results */
@@ -254,6 +256,7 @@ tailwind.config = {
     <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">CHART</button>
     <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
     <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RAIN</button>
+    <button id="rpToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition" title="VFR entry/exit reporting points from ENAIRE VAC charts">RP</button>
     <button id="earthBtnHeader" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" title="3D Earth with great-circle route">&#127758;</button>
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
@@ -269,6 +272,7 @@ tailwind.config = {
     <button id="flyToggle" class="rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
       FLY
     </button>
+    <button id="sosBtn" class="rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-rose-200 hover:bg-rose-500/30 transition" title="emergency assistant">SOS</button>
     <div class="h-6 w-px bg-slate-500/20 mx-1"></div>
     <div class="flex items-center gap-1.5 pr-1" title="server link">
       <span id="linkDot" class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
@@ -310,12 +314,43 @@ tailwind.config = {
   <div id="earthLoading" class="absolute inset-0 hidden place-items-center text-xs tracking-[0.3em] text-slate-500 select-none">LOADING EARTH&hellip;</div>
 </div>
 
+<div id="guardPanel" class="glass p-3">
+  <div class="flex items-center justify-between mb-1.5">
+    <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">Guardian · engine-out options</span>
+    <button id="guardClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
+  </div>
+  <div class="flex items-center gap-2 mb-2 text-[9px] font-mono text-slate-400">
+    <label>RATIO <input id="glideRatio" type="number" min="3" max="25" step="0.5" class="w-10 bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
+    <label>BEST GLD KT <input id="glideKt" type="number" min="35" max="140" step="1" class="w-12 bg-black/40 rounded px-1 py-0.5 text-cyan-200"></label>
+  </div>
+  <div id="guardRows" class="space-y-1 max-h-[180px] overflow-y-auto text-[10px] font-mono"></div>
+  <div id="guardNote" class="text-[8px] text-slate-500 mt-1"></div>
+</div>
+
+<div id="sosOverlay" class="hidden fixed inset-0 z-[60] bg-[#1a0505]/97 backdrop-blur-md overflow-y-auto">
+  <div class="min-h-full flex flex-col items-center justify-center gap-4 p-6 text-center">
+    <div class="text-rose-400 font-extrabold tracking-[0.3em] text-sm">EMERGENCY</div>
+    <div class="text-4xl sm:text-5xl font-black text-white font-mono tracking-widest">SQUAWK 7700</div>
+    <div id="sosPos" class="font-mono text-lg text-amber-200 select-all">--</div>
+    <div class="flex gap-2">
+      <button id="sosCopy" class="chip px-4 py-2 text-xs font-bold">COPY POSITION</button>
+      <a id="smsLink" href="#" class="chip px-4 py-2 text-xs font-bold no-underline">SEND BY SMS</a>
+    </div>
+    <div class="w-full max-w-md glass p-4 mt-2 text-left">
+      <div class="text-[10px] uppercase tracking-[0.25em] text-rose-300 mb-2">Best glide options right now</div>
+      <div id="sosOptions" class="space-y-2 text-[11px] font-mono"></div>
+      <div class="text-[8px] text-slate-500 mt-2">Margins assume best-glide in the current wind — fly the pattern that keeps your options open.</div>
+    </div>
+    <div id="sosFreqs" class="text-[11px] font-mono text-slate-300"></div>
+    <button id="sosExit" class="chip px-6 py-2 text-xs font-bold mt-2">CLOSE</button>
+  </div>
+</div>
+
 <div id="groundPanel" class="glass p-3">
   <div class="flex items-center justify-between mb-1.5">
     <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Ground · <span id="gpIdent">—</span></div>
     <button id="gpClose" class="chip px-2 py-0.5 text-[9px]">HIDE</button>
-  </div>
-  <canvas id="groundCanvas"></canvas>
+  </div>  <canvas id="groundCanvas"></canvas>
   <div id="gpRows" class="mt-2 space-y-1 max-h-[150px] overflow-y-auto text-[10px] font-mono"></div>
   <div class="mt-1.5 text-[8px] leading-snug text-slate-500">
     Runways &amp; headings from OurAirports; taxiway letters are only printed on the ADG chart — open the AD-2 for the official diagram.
@@ -390,6 +425,11 @@ tailwind.config = {
       </div>
     </div>
     <div id="vorHint" class="mt-1.5 text-[8px] text-slate-500 hidden">Tap a VOR on the map → TUNE to navigate by it.</div>
+    <div id="hudRp" class="hidden mt-1.5 text-[10px] font-mono text-violet-200"></div>
+    <div class="flex gap-2 mt-2">
+      <button id="hudGuard" class="chip flex-1 py-1.5 text-[10px] font-bold text-rose-200">GUARD</button>
+      <button id="hudSos" class="chip flex-1 py-1.5 text-[10px] font-extrabold text-rose-300">SOS</button>
+    </div>
   </div>
 </div>
 
@@ -516,6 +556,7 @@ tailwind.config = {
     <!-- BRIEF: the numbers that matter + planning actions -->
     <div id="tab-brief">
       <div id="crosswindSlot" class="mb-3"></div>
+      <div id="glareCard" class="hidden glass mb-3 p-3 rounded-xl border border-amber-400/20"></div>
 
       <div class="grid grid-cols-4 gap-2 mb-4">
         <div class="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-2.5 text-center">
@@ -547,6 +588,16 @@ tailwind.config = {
     <!-- WEATHER: wind advisor, TAF windows, cloud forecast -->
     <div id="tab-wx" class="hidden">
       <div id="windAdvice" class="glass p-3 rounded-xl border border-sky-400/20"></div>
+      <div id="futureScrub" class="glass mt-3 p-3 rounded-xl border border-amber-400/20 hidden">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Fly the future</span>
+          <span class="hud-num text-sm font-extrabold text-amber-200" id="futureLabel">NOW</span>
+        </div>
+        <input id="futureRange" type="range" min="0" max="12" step="1" value="0" class="w-full accent-amber-400">
+        <div class="flex justify-between text-[8px] tracking-widest text-slate-500 mt-0.5"><span>NOW</span><span>+12H</span></div>
+        <div id="futureCats" class="flex gap-2 mt-2"></div>
+        <div class="text-[8px] text-slate-500 mt-1">Categories step through TAF periods — the forecast valid at your selected hour, not an interpolation.</div>
+      </div>
       <div id="tafTimeline" class="hidden glass mt-3 p-3 rounded-xl border border-cyan-400/20"></div>
       <div id="cloudStrip" class="hidden glass mt-3 p-3 rounded-xl border border-slate-400/20"></div>
     </div>
@@ -1094,6 +1145,8 @@ form.addEventListener('submit', async (ev) => {
     loadWindAdvice(result);
     loadTafTimelines(result);
     loadCloudStrip(result);
+    loadGlare(result);
+    loadReportingPoints(result);
     loadNotams(result);
     await loadTerrainFor(result);
   } catch (err) {
@@ -2697,6 +2750,7 @@ setInterval(() => {
         sixPack.lastAlt = alt; sixPack.lastAltT = nowMs;
         sixPack.altFt = Math.round(alt * 3.28084);
       }
+      if (sixPack.altFt !== null) lastKnownAltFt = sixPack.altFt;
       $('hudAlt').textContent = sixPack.altFt ?? '----';
       $('hudVs').textContent = sixPack.vsFpm > 0 ? `+${sixPack.vsFpm}` : String(sixPack.vsFpm);
     }, () => {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 1000 });
@@ -3222,6 +3276,342 @@ $('earthSpin').addEventListener('click', () => {
   $('earthSpin').style.background = earthView.spinOn ? '' : 'rgba(148,163,184,0.25)';
 });
 
+/* ================= 1. GUARDIAN — live engine-out advisor =================== */
+
+let lastKnownAltFt = null;
+const guard = { armed: false, timer: null, data: null };
+const glidePrefs = JSON.parse(localStorage.getItem('richdaleGlide') || '{"ratio":9,"kt":75}');
+$('glideRatio').value = glidePrefs.ratio;
+$('glideKt').value = glidePrefs.kt;
+for (const [el, key] of [[$('glideRatio'), 'ratio'], [$('glideKt'), 'kt']]) {
+  el.addEventListener('change', () => {
+    glidePrefs[key] = parseFloat(el.value) || (key === 'ratio' ? 9 : 75);
+    localStorage.setItem('richdaleGlide', JSON.stringify(glidePrefs));
+    if (guard.armed) pollGuardNow();
+  });
+}
+$('guardClose').addEventListener('click', () => $('guardPanel').classList.remove('show'));
+$('hudGuard').addEventListener('click', toggleGuard);
+
+function toggleGuard() {
+  guard.armed = !guard.armed;
+  $('hudGuard').style.background = guard.armed ? 'rgba(244,63,94,0.25)' : '';
+  $('hudGuard').textContent = guard.armed ? 'GUARD ON' : 'GUARD';
+  if (guard.armed) {
+    $('guardPanel').classList.add('show');
+    pollGuardNow();
+    guard.timer = setInterval(pollGuardNow, 10000);
+  } else {
+    clearInterval(guard.timer);
+    $('guardPanel').classList.remove('show');
+    setLayerVisibility('guard-ring-fill', false);
+    setLayerVisibility('guard-ring-line', false);
+  }
+}
+
+async function pollGuardNow() {
+  if (!gpsPosition || !guard.armed) return;
+  try {
+    const res = await api('/api/emergency/guardian', {
+      method: 'POST',
+      body: {
+        latitude: gpsPosition[0], longitude: gpsPosition[1],
+        altitude_ft: lastKnownAltFt || 3000,
+        best_glide_kt: glidePrefs.kt, glide_ratio: glidePrefs.ratio,
+      },
+    });
+    guard.data = res;
+    renderGuard();
+  } catch (err) { /* keep last good data */ }
+}
+
+function renderGuard() {
+  const d = guard.data;
+  if (!d || !guard.armed) return;
+
+  // wind-distorted reachability envelope on the map
+  if (!map.getSource('guardRing')) {
+    map.addSource('guardRing', { type: 'geojson', data: EMPTY_ROUTE });
+    map.addLayer({
+      id: 'guard-ring-fill', type: 'fill', source: 'guardRing',
+      paint: { 'fill-color': '#f43f5e', 'fill-opacity': 0.10 },
+    });
+    map.addLayer({
+      id: 'guard-ring-line', type: 'line', source: 'guardRing',
+      paint: { 'line-color': '#fb7185', 'line-width': 1.5, 'line-dasharray': [2, 2] },
+    });
+  }
+  const ringClosed = d.ring.length ? [...d.ring, d.ring[0]] : [];
+  if (ringClosed.length) {
+    map.getSource('guardRing').setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [ringClosed.map(c => [c[1], c[0]])] },
+      }],
+    });
+    setLayerVisibility('guard-ring-fill', true);
+    setLayerVisibility('guard-ring-line', true);
+  }
+
+  const rows = d.options.length ? d.options.slice(0, 4).map((o, i) => {
+    const mColor = o.margin_nm > 2 ? '#22c55e' : o.margin_nm > 0.5 ? '#f59e0b' : '#ef4444';
+    const xwTxt = o.crosswind_kt === null ? '' :
+      ` <span style="color:${o.crosswind_kt > 12 ? '#ef4444' : '#94a3b8'}">XW ${o.crosswind_kt}</span>`;
+    return `<button class="w-full text-left flex justify-between gap-2 rounded-lg border border-white/5 bg-black/25 px-2 py-1.5 hover:bg-white/5" onclick="window.__richdaleFlyTo(${o.bearing_deg},${o.distance_nm})">
+      <span class="text-amber-200 font-bold">${i + 1}. ${o.airport} RWY ${o.runway}</span>
+      <span>${o.distance_nm}nm</span>
+      <span style="color:${mColor}">+${o.margin_nm}</span>${xwTxt}
+    </button>`;
+  }).join('')
+    : `<div class="text-rose-300 font-bold">BELOW GLIDE of every listed runway.</div>
+       <div class="text-slate-400 mt-1">Turn TOWARD the widest part of the dashed envelope and climb if able.</div>`;
+  $('guardRows').innerHTML = rows;
+  const a = d.assumptions;
+  $('guardNote').textContent =
+    `${a.agl_ft.toLocaleString()}ft AGL · still-air ${a.still_air_range_nm}nm` +
+    (a.wind ? ` · wind ${a.wind.from_deg.toFixed(0)}°/${a.wind.speed_kt}kt (${a.wind.source})` : '') +
+    (a.note ? ` · ${a.note}` : '');
+}
+
+// quick fly-to a bearing/distance from current position
+window.__richdaleFlyTo = function (brgDeg, distNm) {
+  if (!gpsPosition || !map) return;
+  const rad = brgDeg * Math.PI / 180;
+  const dLat = (distNm * Math.cos(rad)) / 60;
+  const dLon = (distNm * Math.sin(rad)) / (60 * Math.max(0.2, Math.cos(gpsPosition[0] * Math.PI / 180)));
+  map.flyTo({ center: [gpsPosition[1] + dLon, gpsPosition[0] + dLat], zoom: Math.max(map.getZoom(), 11) });
+};
+
+/* ===================== 2. GLARE COMPASS (sun in eyes) ====================== */
+
+function sunAzAlt(latDeg, lonDeg, date) {
+  // NOAA solar position, compact port
+  const rad = Math.PI / 180;
+  const jd = date.getTime() / 86400000 + 2440587.5;
+  const n = jd - 2451545.0;
+  const L = (280.460 + 0.9856474 * n) % 360;
+  const g = ((357.528 + 0.9856003 * n) % 360) * rad;
+  const lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * rad;
+  const eps = (23.439 - 0.0000004 * n) * rad;
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lambda));
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));   // radians
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  const lst = (gmst * 15 + lonDeg) * rad;   // degrees→rad as hour angle base
+  let ha = lst - ra;
+  ha = ((ha + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  const latR = latDeg * rad;
+  const alt = Math.asin(Math.sin(latR) * Math.sin(dec) + Math.cos(latR) * Math.cos(dec) * Math.cos(ha));
+  const az = Math.atan2(-Math.cos(ha) * Math.sin(dec) + Math.tan(latR) * Math.cos(dec), Math.sin(ha));
+  return { altDeg: alt / rad, azDeg: (az / rad + 360) % 360 };
+}
+
+function loadGlare(navlog) {
+  const card = $('glareCard');
+  try {
+    const hits = [];
+    let cumMin = 0;
+    const nowMs = Date.now();
+    navlog.legs.forEach((leg, idx) => {
+      const a = leg.geometry[0], b = leg.geometry[leg.geometry.length - 1];
+      const course = bearingToDeg(a[0], a[1], b[0], b[1]);
+      const ete = leg.ete_min || 0;
+      for (let t = 0; t <= ete; t += 2) {
+        const when = new Date(nowMs + (cumMin + t) * 60000);
+        const s = sunAzAlt(a[0], a[1], when);
+        if (s.altDeg > 2 && s.altDeg < 22) {
+          let diff = Math.abs(((s.azDeg - course + 540) % 360) - 180);
+          diff = 180 - diff;                       // 0 = aligned
+          if (diff < 22) {
+            hits.push({ leg: idx + 1, to: leg.to || '', utc: when.toISOString().substr(11, 5),
+                        az: s.azDeg.toFixed(0), course: course.toFixed(0), off: diff.toFixed(0), alt: s.altDeg.toFixed(0) });
+            break;                                 // one hit per leg is enough
+          }
+        }
+      }
+      cumMin += ete;
+    });
+    if (!navlog.legs.length) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    card.innerHTML = hits.length
+      ? `<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300 mb-1.5">☀ Glare compass</div>` +
+        hits.map(h => `<div class="text-[11px] font-mono">LEG ${h.leg} → ${h.to}: sun dead-ahead ~<b class="text-amber-200">${h.utc}Z</b> (hdg ${h.course}° vs az ${h.az}°, ${h.alt}° high)</div>`).join('') +
+        `<div class="text-[8px] text-slate-500 mt-1">Low-sun band 2°–22° elevation within ±22° of heading. Sunglasses on before these times.</div>`
+      : `<div class="text-[10px] text-slate-400">☀ No low-sun glare conflict on this route at these times.</div>`;
+  } catch (err) {
+    card.classList.add('hidden');
+  }
+}
+
+/* =================== 3. FLY-THE-FUTURE (time scrubber) ===================== */
+
+let futureTafCache = null, futureIcaos = [];
+
+function renderFuture(offsetH) {
+  $('futureLabel').textContent = offsetH === 0 ? 'NOW' : `+${offsetH} H`;
+  const target = Date.now() + offsetH * 3600000;
+  const cats = futureIcaos.map(icao => {
+    const tl = futureTafCache && futureTafCache.timelines && futureTafCache.timelines[icao];
+    if (!tl || !tl.periods.length) return `<span class="text-slate-500 text-[10px] font-mono">${icao}: —</span>`;
+    const p = tl.periods.find(p => new Date(p.start) <= target && target < new Date(p.end))
+           || tl.periods.reduce((best, q) =>
+                Math.abs(new Date(q.start) - target) < Math.abs(new Date(best.start) - target) ? q : best,
+                tl.periods[0]);
+    const col = CAT_BG[p.category] || '#64748b';
+    const exact = new Date(p.start) <= target && target < new Date(p.end);
+    return `<div class="flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-center">
+      <div class="text-[9px] tracking-widest text-slate-400">${icao}${exact ? '' : ' ≈'}</div>
+      <div class="text-sm font-extrabold" style="color:${col}">${p.category}</div>
+      <div class="text-[8px] text-slate-500">${p.cavok ? 'CAVOK' : `vis ${p.visibility_m ? Math.round(p.visibility_m / 1000) + 'km' : '—'}`}</div>
+    </div>`;
+  }).join('');
+  $('futureCats').innerHTML = cats;
+}
+
+$('futureRange')?.addEventListener('input', e => {
+  const h = parseInt(e.target.value, 10);
+  renderFuture(h);
+  // highlight the matching cloud-strip column
+  const cols = document.querySelectorAll('#cloudCols > div');
+  const i = h;   // cloud profile is hourly from now
+  cols.forEach((c, k) => c.style.outline = k === i ? '2px solid rgba(251,191,36,.8)' : '');
+});
+
+/* ================== 4. REPORTING POINT COPILOT (ENAIRE) ==================== */
+
+const rpCache = [];       // {name, latitude, longitude}
+let rpVisible = true;
+
+$('rpToggle')?.addEventListener('click', () => {
+  rpVisible = !rpVisible;
+  $('rpToggle').style.background = rpVisible ? 'rgba(167,139,250,0.25)' : '';
+  setLayerVisibility('rp-points', rpVisible);
+  setLayerVisibility('rp-labels', rpVisible);
+});
+
+async function loadReportingPoints(navlog) {
+  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])
+    .filter(i => /^LE[A-Z]{2}$/.test(i || ''))];
+  if (!icaos.length) return;
+  const fresh = [];
+  for (const icao of icaos) {
+    try {
+      const res = await api(`/api/aip/reporting-points/${icao}`);
+      fresh.push(...res.points.map(p => ({ ...p, icao })));
+    } catch { /* per-airport failure is fine */ }
+  }
+  rpCache.length = 0;
+  rpCache.push(...fresh);
+  if (!rpCache.length || !map.getSource('rpoints')) {
+    if (!rpCache.length) return;
+    map.addSource('rpoints', { type: 'geojson', data: EMPTY_ROUTE });
+    map.addLayer({
+      id: 'rp-points', type: 'circle', source: 'rpoints',
+      paint: { 'circle-radius': 5, 'circle-color': '#a78bfa', 'circle-stroke-width': 1.5, 'circle-stroke-color': '#0b1220' },
+    });
+    map.addLayer({
+      id: 'rp-labels', type: 'symbol', source: 'rpoints',
+      layout: {
+        'text-field': ['get', 'name'], 'text-font': ['Open Sans Bold'],
+        'text-size': 10, 'text-offset': [0, 1.1], 'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#c4b5fd', 'text-halo-color': '#0b1220', 'text-halo-width': 1.2 },
+    });
+  }
+  map.getSource('rpoints').setData({
+    type: 'FeatureCollection',
+    features: rpCache.map(p => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+      properties: { name: `${p.name}` },
+    })),
+  });
+  setLayerVisibility('rp-points', rpVisible);
+  setLayerVisibility('rp-labels', rpVisible);
+}
+
+function nearestRpAhead() {
+  if (!gpsPosition || !rpCache.length || !lastNavlog) return null;
+  const track = window.__richdaleGpsHeadingDeg;
+  if (track === null || track === undefined) return null;
+  let best = null;
+  for (const p of rpCache) {
+    const d = haversineFront(gpsPosition[0], gpsPosition[1], p.latitude, p.longitude);
+    if (d > 20) continue;
+    const brg = bearingToDeg(gpsPosition[0], gpsPosition[1], p.latitude, p.longitude);
+    const rel = ((brg - track + 540) % 360) - 180;
+    if (Math.abs(rel) > 75) continue;
+    if (!best || d < best.d) best = { name: p.name, d, rel };
+  }
+  return best;
+}
+
+function haversineFront(lat1, lon1, lat2, lon2) {
+  const R = 3440.065, p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+  const dp = p2 - p1, dl = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// HUD line, refreshed with the FLY loop
+setInterval(() => {
+  if (!flyModeActive) return;
+  const rp = nearestRpAhead();
+  const el = $('hudRp');
+  if (!el) return;
+  if (rp) {
+    el.classList.remove('hidden');
+    el.textContent = `RP ${rp.name} · ${rp.d.toFixed(1)} NM · ${Math.abs(rp.rel).toFixed(0)}°${rp.rel > 0 ? 'R' : 'L'}`;
+  } else {
+    el.classList.add('hidden');
+  }
+}, 1000);
+
+/* ============================ 5. MAYDAY MODE =============================== */
+
+async function openSos() {
+  $('sosOverlay').classList.remove('hidden');
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  const posTxt = gpsPosition
+    ? `${gpsPosition[0].toFixed(5)}, ${gpsPosition[1].toFixed(5)} · ALT ${lastKnownAltFt ?? '?'}ft · GS ${Math.round(window.__richdaleGpsSpeedKt || 0)}kt`
+    : 'NO GPS FIX';
+  $('sosPos').textContent = posTxt;
+  const body = encodeURIComponent(`MAYDAY assistance. My position: ${posTxt}`);
+  $('smsLink').href = `sms:&body=${body}`;
+  $('sosOptions').innerHTML = '<div class="text-slate-400">Computing glide options…</div>';
+  try {
+    const res = await api('/api/emergency/guardian', {
+      method: 'POST',
+      body: {
+        latitude: gpsPosition ? gpsPosition[0] : 0, longitude: gpsPosition ? gpsPosition[1] : 0,
+        altitude_ft: lastKnownAltFt || 3000,
+        best_glide_kt: glidePrefs.kt, glide_ratio: glidePrefs.ratio,
+      },
+    });
+    guard.data = res;
+    $('sosOptions').innerHTML = res.options.length
+      ? res.options.slice(0, 3).map(o =>
+          `<div class="flex justify-between gap-2">
+             <span class="text-amber-200 font-bold">${o.airport} RWY ${o.runway}</span>
+             <span>${o.distance_nm}nm</span>
+             <span style="color:${o.margin_nm > 1 ? '#22c55e' : '#f59e0b'}">+${o.margin_nm}nm</span>
+             ${o.crosswind_kt !== null ? `<span>XW ${o.crosswind_kt}</span>` : ''}
+           </div>`).join('')
+      : '<div class="text-rose-300 font-bold">No runway within glide — fly the dashed envelope toward its widest arc and climb.</div>';
+  } catch {
+    $('sosOptions').innerHTML = '<div class="text-slate-500">Glide computation unavailable offline.</div>';
+  }
+}
+
+$('sosBtn').addEventListener('click', openSos);
+$('hudSos').addEventListener('click', openSos);
+$('sosExit').addEventListener('click', () => $('sosOverlay').classList.add('hidden'));
+$('sosCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('sosPos').textContent); showToast('Position copied.', 'info'); }
+  catch { showToast('Copy blocked by browser.', 'warn'); }
+});
+
 $('earthZoomIn')?.addEventListener('click', () => earthView.zoomBy?.(0.72));
 $('earthZoomOut')?.addEventListener('click', () => earthView.zoomBy?.(1.38));
 
@@ -3245,6 +3635,9 @@ async function loadTafTimelines(navlog) {
   box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">TAF windows…</div>';
   try {
     const res = await api('/api/weather/taf/timeline', { method: 'POST', body: { icaos } });
+    futureTafCache = res; futureIcaos = icaos;
+    $('futureScrub').classList.remove('hidden');
+    renderFuture(parseInt($('futureRange').value, 10) || 0);
     let html = '<div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300 mb-2">TAF validity windows</div>';
     for (const icao of icaos) {
       const tl = res.timelines[icao];
@@ -3291,6 +3684,7 @@ async function loadCloudStrip(navlog) {
     });
     const hours = (res.profiles[0] && res.profiles[0].hours) || [];
     if (!hours.length) { box.classList.add('hidden'); return; }
+    window.__cloudHours = hours;
     let cols = '';
     hours.forEach((h, i) => {
       const seg = pct => Math.max(0, Math.min(100, pct)) * 0.5; // half-height per layer stack
@@ -3310,9 +3704,8 @@ async function loadCloudStrip(navlog) {
           <span><i class="inline-block h-2 w-2" style="background:#f59e0b"></i> LOW</span>
           <span><i class="inline-block h-2 w-2" style="background:#94a3b8"></i> MID</span>
           <span><i class="inline-block h-2 w-2" style="background:#38bdf8"></i> HIGH</span>
-        </div>
-      </div>
-      <div class="flex gap-1 items-end">${cols}</div>`;
+        </div>      </div>
+      <div id="cloudCols" class="flex gap-1 items-end">${cols}</div>`;
   } catch (err) {
     box.innerHTML = `<div class="text-[11px] text-slate-500">Cloud forecast unavailable.</div>`;
   }

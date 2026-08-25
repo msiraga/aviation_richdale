@@ -740,6 +740,21 @@ async def post_cloud_profile(body: CloudProfileRequest):
     return ok_payload({"profiles": profiles})
 
 
+@app.get("/api/aip/reporting-points/{icao}")
+async def get_reporting_points(icao: str):
+    """VFR entry/exit reporting points parsed from the ENAIRE AD-2/VAC chart."""
+    try:
+        snap = await app.state.enaire.get_ad2(icao)
+    except Exception as exc:  # noqa: BLE001 — points are an enhancement
+        return ok_payload({"points": [], "note": f"AD2 unavailable: {exc}"})
+    pts = [
+        {"name": p.name, "latitude": p.latitude_deg, "longitude": p.longitude_deg}
+        for p in snap.reporting_points
+    ]
+    note = None if pts else "No VFR reporting points parsed for this aerodrome."
+    return ok_payload({"points": pts, "count": len(pts), "note": note, "vac_url": snap.vac_url})
+
+
 @app.get("/api/notam")
 async def get_notams(bbox: str):
     south, west, north, east = _bbox_or_bad(bbox)
@@ -755,6 +770,133 @@ class GroundRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     heading_deg: float | None = Field(default=None, ge=0, lt=360)
+
+
+class GuardianRequest(BaseModel):
+    """Engine-out reachability ask: what can this glide actually reach?"""
+    model_config = ConfigDict(extra="forbid")
+
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    altitude_ft: float = Field(ge=0, le=25000)
+    best_glide_kt: float = Field(default=75, ge=35, le=140)
+    glide_ratio: float = Field(default=9.0, ge=3, le=25)
+
+
+@app.post("/api/emergency/guardian")
+async def post_guardian(body: GuardianRequest):
+    """Wind-corrected glide envelope + ranked runway options from this spot."""
+    import asyncio as _aio
+
+    agl_ft = max(200.0, body.altitude_ft - 800.0)          # conservative field-elevation pad
+    still_range_nm = body.glide_ratio * agl_ft / 6076.0
+    time_hr = still_range_nm / body.best_glide_kt
+
+    # nearest paved-runway fields within plausible glide range
+    nearby = await app.state.ground.nearby_far(body.latitude, body.longitude,
+                                               nm=max(30.0, still_range_nm * 1.6))
+    if nearby is None:
+        return ok_payload({"options": [], "ring": [], "assumptions": {
+            "agl_ft": round(agl_ft), "still_air_range_nm": round(still_range_nm, 1),
+            "wind": None, "note": "No paved-runway airport within glide-plus-margin.",
+        }})
+
+    # surface wind from the closest field with a report (veered +30 deg, x0.7 aloft proxy)
+    wind = None
+    try:
+        idents = [n["airport"]["ident"] for n in nearby[:6]]
+        reports = await app.state.weather.latest_metars(idents)
+        for rep in reports:
+            if rep.wind and rep.wind.speed_kt is not None and rep.wind.direction_from_deg_true:
+                wind = {
+                    "from_deg": (float(rep.wind.direction_from_deg_true) + 30.0) % 360.0,
+                    "speed_kt": round(float(rep.wind.speed_kt) * 0.7, 1),
+                    "source": f"{rep.icao} METAR",
+                }
+                break
+    except Exception as exc:  # noqa: BLE001 — ring must work offline too
+        log.info("guardian METAR unavailable: %s", exc)
+
+    def range_nm(bearing_deg: float) -> float:
+        if not wind:
+            return still_range_nm
+        import math as _m
+        hw = wind["speed_kt"] * _m.cos(_m.radians(bearing_deg - wind["from_deg"]))
+        gs = max(20.0, body.best_glide_kt - hw)
+        return min(gs * time_hr, still_range_nm * 1.45)
+
+    ring = []
+    for k in range(73):
+        brg = k * 5.0
+        r = range_nm(brg)
+        import math as _m
+        ring.append([
+            round(body.latitude + (_m.cos(_m.radians(brg)) * r) / 60.0, 4),
+            round(body.longitude + (_m.sin(_m.radians(brg)) * r)
+                  / (60.0 * max(0.2, _m.cos(_m.radians(body.latitude)))), 4),
+        ])
+
+    options = []
+    import math as _m
+    for entry in nearby:
+        apt = entry["airport"]
+        brg = _ground_initial_bearing(body.latitude, body.longitude,
+                                      apt["latitude"], apt["longitude"])
+        reach = range_nm(brg)
+        dist = entry["distance_nm"]
+        margin_nm = reach - dist
+        if margin_nm < -1.0:
+            continue
+        for rwy in entry["runways"]:
+            for side in ("le", "he"):
+                ident = rwy.get(f"{side}_ident")
+                head = rwy.get(f"{side}_heading_t")
+                if not ident or head is None:
+                    continue
+                hw, xw_signed = _ground_wind_components(float(head),
+                                                        wind["from_deg"] if wind else 0.0,
+                                                        wind["speed_kt"] if wind else 0.0)
+                xw = abs(xw_signed) if wind else 0.0
+                score = (margin_nm / max(reach, 0.1)) * 100.0 \
+                    - max(0.0, xw - 8.0) * 2.5 \
+                    - (0.0 if (rwy.get("surface") or "").upper().startswith(("ASP", "CON", "BIT")) else 3.0)
+                options.append({
+                    "airport": apt["ident"],
+                    "name": apt.get("name", ""),
+                    "runway": str(ident).lstrip("0") if str(ident).endswith("0") else str(ident),
+                    "runway_heading_t": float(head),
+                    "surface": rwy.get("surface") or "",
+                    "length_m": rwy["length_m"],
+                    "distance_nm": round(dist, 1),
+                    "bearing_deg": round(brg, 0),
+                    "margin_nm": round(margin_nm, 1),
+                    "headwind_kt": round(hw, 1) if wind else None,
+                    "crosswind_kt": round(xw, 1) if wind else None,
+                    "score": round(score, 1),
+                })
+
+    options.sort(key=lambda o: -o["score"])
+    seen = set()
+    top = []
+    for o in options:
+        key = (o["airport"], o["runway"])
+        if key in seen:
+            continue
+        seen.add(key)
+        top.append(o)
+        if len(top) >= 5:
+            break
+
+    return ok_payload({
+        "options": top,
+        "ring": ring,
+        "assumptions": {
+            "agl_ft": round(agl_ft),
+            "still_air_range_nm": round(still_range_nm, 1),
+            "wind": wind,
+            "note": "" if wind else "No METAR within range — still-air envelope shown.",
+        },
+    })
 
 
 @app.post("/api/ground/nearby")

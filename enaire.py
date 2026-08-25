@@ -489,18 +489,29 @@ class EnaireAd2Service:
         if not force_refresh:
             cached = await self.repository.cached_snapshot(target)
             if cached is not None:
-                if not cached.vac_url:
-                    # snapshots stored before VAC discovery existed lack the URL —
-                    # probe for it cheaply and patch the cache in place
+                needs_vac_url = not cached.vac_url
+                needs_points = len(cached.reporting_points) == 0
+                if needs_vac_url or needs_points:
+                    # snapshots stored before VAC discovery existed lack the URL,
+                    # and some lack parsed reporting points — fetch once, patch cache
                     try:
-                        vac_url = await self._discover_vac_url(target)
+                        vac_text, vac_url = await self._load_vac_text(target)
                     except httpx.HTTPError as exc:
-                        log.info("VAC URL probe failed for %s: %s", target, exc)
+                        log.info("VAC backfill failed for %s: %s", target, exc)
                         return cached
-                    if vac_url:
-                        patched = dataclass_replace(cached, vac_url=vac_url)
-                        await self.repository.store_snapshot(patched)
-                        return patched
+                    notes = cached.parse_notes
+                    points = cached.reporting_points
+                    if vac_text and needs_points:
+                        extra = parse_reporting_points_from_vac(vac_text)
+                        if extra:
+                            points = merge_reporting_points(points, extra)
+                            notes = notes + ("VFR reporting points sourced from the ENAIRE VAC chart",)
+                    patched = dataclass_replace(
+                        cached, vac_url=vac_url or cached.vac_url,
+                        reporting_points=points, parse_notes=notes,
+                    )
+                    await self.repository.store_snapshot(patched)
+                    return patched
                 return cached
 
         try:
