@@ -430,7 +430,7 @@ class EnaireAipRepository:
                 ),
             )
 
-    def _load_latest_sync(self, icao: str) -> Ad2Snapshot | None:
+    def _load_latest_sync(self, icao: str, max_age_hours: float | None = None) -> Ad2Snapshot | None:
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -444,14 +444,19 @@ class EnaireAipRepository:
         if row is None:
             return None
         raw = json.loads(row[0])
-        fetched = datetime.fromisoformat(raw["fetched_at_utc"])
-        age_hours = (datetime.now(timezone.utc) - fetched).total_seconds() / 3600.0
-        if age_hours > self.cache_ttl_hours:
-            return None
+        if max_age_hours is not None:
+            fetched = datetime.fromisoformat(raw["fetched_at_utc"])
+            age_hours = (datetime.now(timezone.utc) - fetched).total_seconds() / 3600.0
+            if age_hours > max_age_hours:
+                return None
         return Ad2Snapshot.from_cache_dict(raw)
 
     async def cached_snapshot(self, icao: str) -> Ad2Snapshot | None:
         return await asyncio.to_thread(self._load_latest_sync, icao)
+
+    async def any_snapshot(self, icao: str) -> Ad2Snapshot | None:
+        """Latest snapshot regardless of age — used when the network is down."""
+        return await asyncio.to_thread(self._load_latest_sync, icao, None)
 
     async def store_snapshot(self, snapshot: Ad2Snapshot) -> None:
         await asyncio.to_thread(self._save_sync, snapshot)
@@ -483,10 +488,34 @@ class EnaireAd2Service:
             if cached is not None:
                 return cached
 
-        document_url = await self._discover_document(target)
-        payload = await self._download(document_url)
-        text = await asyncio.to_thread(extract_pdf_text, payload)
-        snapshot = parse_ad2_text(target, text, source_url=document_url)
+        try:
+            document_url = await self._discover_document(target)
+            payload = await self._download(document_url)
+            text = await asyncio.to_thread(extract_pdf_text, payload)
+            snapshot = parse_ad2_text(target, text, source_url=document_url)
+        except (EnaireError, httpx.HTTPError) as exc:
+            stale = await self.repository.any_snapshot(target)
+            if stale is None:
+                raise
+            age_hours = (
+                datetime.now(timezone.utc) - stale.fetched_at_utc
+            ).total_seconds() / 3600.0
+            log.warning("serving stale AD2 for %s (%.1fh old): %s", target, age_hours, exc)
+            return Ad2Snapshot(
+                icao=stale.icao,
+                source_url=stale.source_url,
+                fetched_at_utc=stale.fetched_at_utc,
+                aerodrome_name=stale.aerodrome_name,
+                arp_latitude=stale.arp_latitude,
+                arp_longitude=stale.arp_longitude,
+                transition_altitude_ft=stale.transition_altitude_ft,
+                transition_level_ft=stale.transition_level_ft,
+                frequencies=stale.frequencies,
+                reporting_points=stale.reporting_points,
+                runways=stale.runways,
+                parse_notes=stale.parse_notes
+                + (f"Network unavailable — showing data cached {age_hours:.0f} h ago",),
+            )
 
         try:
             vac_text = await self._load_vac_text(target)

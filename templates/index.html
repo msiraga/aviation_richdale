@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>RICHDALE // VFR Situational Awareness</title>
@@ -494,7 +495,7 @@ const map = new maplibregl.Map({
   attributionControl: false,
   style: {
     version: 8,
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
     sources: {
       basemap: {
         type: 'raster',
@@ -1575,8 +1576,10 @@ $('fplToggle').addEventListener('click', () => {
   buildFpl();
 });
 $('fplClose').addEventListener('click', () => $('fplModal').classList.add('hidden'));
-['fplCallsign','fplType','fplPob','fplEobt','fplAltn','fplEndur'].forEach(id =>
-  $(`#${id}`).addEventListener('input', buildFpl));
+['fplCallsign','fplType','fplPob','fplEobt','fplAltn','fplEndur'].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('input', buildFpl);
+});
 
 function buildFpl() {
   const out = $('fplOutput');
