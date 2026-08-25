@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>RICHDALE // VFR Situational Awareness</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        abyss: '#04070f',
+        hull: '#0a1222',
+        neon: { cyan: '#22d3ee', emerald: '#34d399', rose: '#fb5f7d', amber: '#fbbf24', violet: '#a78bfa' }
+      },
+      fontFamily: {
+        display: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace']
+      },
+      boxShadow: {
+        glass: '0 10px 42px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
+        glowcyan: '0 0 24px rgba(34,211,238,0.35)',
+        glowrose: '0 0 30px rgba(251,95,125,0.45)'
+      }
+    }
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  html, body { height: 100%; overscroll-behavior: none; }
+  body {
+    background:
+      radial-gradient(1400px 800px at 75% -10%, rgba(34,211,238,0.08), transparent 60%),
+      radial-gradient(1100px 700px at -10% 110%, rgba(167,139,250,0.07), transparent 60%),
+      linear-gradient(160deg, #04070f 0%, #060b18 55%, #04070f 100%);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #e2e8f0;
+  }
+  #map { position: absolute; inset: 0; }
+  .glass {
+    background: linear-gradient(155deg, rgba(16,26,48,0.72), rgba(8,13,26,0.66));
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    border: 1px solid rgba(148, 197, 255, 0.12);
+    border-radius: 1.15rem;
+    box-shadow: 0 10px 42px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .glass-input {
+    background: rgba(6, 12, 26, 0.65);
+    border: 1px solid rgba(120,170,240,0.16);
+    border-radius: 0.7rem;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .glass-input:focus {
+    outline: none;
+    border-color: rgba(34,211,238,0.65);
+    box-shadow: 0 0 0 3px rgba(34,211,238,0.14), 0 0 18px rgba(34,211,238,0.18);
+  }
+  .neon-text-cyan { text-shadow: 0 0 12px rgba(34,211,238,0.65); }
+  .neon-text-emerald { text-shadow: 0 0 12px rgba(52,211,153,0.6); }
+
+  .btn-primary {
+    background: linear-gradient(120deg, rgba(34,211,238,0.92), rgba(52,211,153,0.9));
+    color: #04121a;
+    font-weight: 700;
+    letter-spacing: .04em;
+    transition: transform .16s ease, box-shadow .25s ease, filter .2s ease;
+    box-shadow: 0 6px 26px rgba(34,211,238,0.35);
+  }
+  .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 10px 34px rgba(34,211,238,0.45); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: .55; cursor: not-allowed; filter: saturate(.4); transform: none; }
+
+  .chip {
+    background: rgba(34,211,238,0.08);
+    border: 1px solid rgba(34,211,238,0.28);
+    border-radius: .55rem;
+  }
+  .chip-remove:hover { color: #fb5f7d; }
+
+  @keyframes pulseDot { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity:.35; transform: scale(.82);} }
+  .pulse-dot { animation: pulseDot 1.8s ease-in-out infinite; }
+
+  @keyframes flagGlow {
+    0%,100% { box-shadow: 0 0 18px rgba(251,95,125,.45), inset 0 0 12px rgba(251,95,125,.12); border-color: rgba(251,95,125,.75);}
+    50%     { box-shadow: 0 0 44px rgba(251,95,125,.85), inset 0 0 22px rgba(251,95,125,.22); border-color: rgba(255,120,145,1);}
+  }
+  .warning-flag { animation: flagGlow 1.5s ease-in-out infinite; border: 1px solid rgba(251,95,125,.75); }
+
+  @keyframes alertSweep { 0% {background-position: 0% 50%;} 100% {background-position: 200% 50%;} }
+  .collision-banner {
+    background: linear-gradient(100deg, rgba(120,10,30,.88), rgba(190,20,55,.82), rgba(120,10,30,.88));
+    background-size: 200% 100%;
+    animation: alertSweep 3.2s linear infinite;
+    border-top: 1px solid rgba(255,120,145,.6);
+    border-bottom: 1px solid rgba(255,120,145,.6);
+    backdrop-filter: blur(14px);
+  }
+
+  .sidebar-enter { transform: translateX(-115%); opacity: .4; }
+  .sidebar-visible { transform: translateX(0); opacity: 1; transition: transform .62s cubic-bezier(.19,1,.22,1), opacity .5s ease; }
+
+  .counter-value { font-variant-numeric: tabular-nums; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(94,140,210,.25); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(94,140,210,.45); }
+
+  .maplibregl-popup-content {
+    background: rgba(10,18,34,.92) !important;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(120,180,255,.2);
+    border-radius: .8rem !important;
+    color: #dbeafe !important;
+    font-size: .78rem;
+    padding: .6rem .8rem !important;
+  }
+  .maplibregl-popup-tip { border-top-color: rgba(10,18,34,.92) !important; border-bottom-color: rgba(10,18,34,.92) !important; }
+  .maplibregl-ctrl-attrib.maplibregl-compact { background: rgba(6,12,26,.6)!important; color:#93a6bd!important; border-radius:.5rem;}
+  .maplibregl-ctrl-attrib a { color: #7fa6d9 !important; }
+
+  #terrainCanvas { width: 100%; height: 100%; display:block; touch-action:none; cursor: grab; }
+  #terrainCanvas.dragging { cursor: grabbing; }
+  #terrainCanvas.panning { cursor: move; }
+
+  .gps-marker {
+    width: 16px; height: 16px; border-radius: 9999px;
+    background: radial-gradient(circle at 35% 30%, #aef3ff, #22d3ee 55%, #0e7490);
+    box-shadow: 0 0 14px rgba(34,211,238,.9), 0 0 4px #fff inset;
+    border: 2px solid rgba(255,255,255,.85);
+  }
+  @keyframes gpsPing { 0% { transform: scale(.6); opacity:.9;} 100% { transform: scale(2.6); opacity: 0;} }
+  .gps-ping {
+    position:absolute; inset:-8px; border-radius:9999px; border:2px solid rgba(34,211,238,.8);
+    animation: gpsPing 2s ease-out infinite;
+  }
+
+  .toast { transition: all .35s cubic-bezier(.19,1,.22,1); }
+</style>
+</head>
+
+<body class="overflow-hidden font-display antialiased">
+
+<div id="map"></div>
+
+<header class="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-3 pointer-events-none">
+  <div class="glass pointer-events-auto flex items-center gap-4 px-5 py-2.5">
+    <div class="flex items-center gap-2.5">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.6">
+        <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+      </svg>
+      <div class="leading-tight">
+        <div class="text-[15px] font-extrabold tracking-wide text-sky-100">RICHDALE<span class="text-neon-cyan neon-text-cyan">// VFR OPS</span></div>
+        <div class="text-[10px] uppercase tracking-[0.22em] text-slate-400">situational awareness engine</div>
+      </div>
+    </div>
+    <div class="h-7 w-px bg-slate-500/20"></div>
+    <div class="font-mono text-sm text-neon-cyan neon-text-cyan tracking-widest" id="utcClock">--:--:--Z</div>
+  </div>
+
+  <div class="glass pointer-events-auto flex items-center gap-2 px-3 py-2">
+    <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
+    <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
+    <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
+      <span id="gpsDot" class="h-2 w-2 rounded-full bg-slate-500"></span>
+      <span id="gpsLabel">GPS OFF</span>
+    </button>
+    <div class="h-6 w-px bg-slate-500/20 mx-1"></div>
+    <div class="flex items-center gap-1.5 pr-1" title="server link">
+      <span id="linkDot" class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
+      <span class="text-[10px] font-semibold tracking-wider text-slate-400" id="linkLabel">LINK</span>
+    </div>
+  </div>
+</header>
+
+<aside id="sidebar"
+       class="sidebar-enter absolute left-4 top-[76px] bottom-4 z-30 w-[380px] max-w-[calc(100vw-2rem)] flex flex-col gap-3 overflow-hidden">
+
+  <section class="glass p-5 flex-none">
+    <div class="flex items-baseline justify-between mb-4">
+      <h1 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Route Composer</h1>
+      <span class="text-[10px] text-slate-500 font-mono">ICAO / lat,lon</span>
+    </div>
+
+    <form id="routeForm" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">
+          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Departure</span>
+          <input id="depInput" required value="LEVC" maxlength="64"
+                 placeholder="LEVC"
+                 class="glass-input w-full px-3 py-2 font-mono text-sm text-cyan-50 placeholder-slate-600">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Arrival</span>
+          <input id="arrInput" required value="LEIB" maxlength="64"
+                 placeholder="LEIB"
+                 class="glass-input w-full px-3 py-2 font-mono text-sm text-cyan-50 placeholder-slate-600">
+        </label>
+      </div>
+
+      <div>
+        <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">En-route waypoints</span>
+        <div class="flex gap-2">
+          <input id="wptInput" maxlength="64" placeholder="+ add ICAO or lat,lon"
+                 class="glass-input w-full px-3 py-2 font-mono text-xs text-cyan-50 placeholder-slate-600">
+          <button type="button" id="wptAdd" class="chip px-3 text-lg leading-none text-cyan-200 hover:bg-cyan-400/20 transition">+</button>
+        </div>
+        <div id="wptChips" class="mt-2 flex flex-wrap gap-1.5 empty:mt-0"></div>
+      </div>
+
+      <div>
+        <div class="flex justify-between items-baseline">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cruise altitude</span>
+          <span class="font-mono text-sm"><b id="altDisplay" class="text-neon-cyan neon-text-cyan">4500</b><span class="text-slate-500 text-[10px]"> FT · </span><b id="flDisplay" class="text-violet-300">FL045</b></span>
+        </div>
+        <input id="altSlider" type="range" min="500" max="15000" step="100" value="4500"
+               class="w-full accent-cyan-400 mt-1.5">
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <label class="block col-span-1">
+          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">TAS kt</span>
+          <input id="tasInput" type="number" value="112" min="20" max="400" step="1"
+                 class="glass-input w-full px-3 py-2 font-mono text-sm text-emerald-100">
+        </label>
+        <label class="block col-span-1">
+          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Burn</span>
+          <input id="fuelInput" type="number" value="9.5" min="0.1" max="200" step="0.1"
+                 class="glass-input w-full px-3 py-2 font-mono text-sm text-emerald-100">
+        </label>
+        <label class="block col-span-1">
+          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Unit</span>
+          <select id="fuelUnit" class="glass-input w-full px-2 py-2 font-mono text-sm text-emerald-100">
+            <option value="GPH">GPH</option>
+            <option value="LPH">LPH</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="block">
+        <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Destination runway heading °M <span class="normal-case font-normal text-slate-500">(for crosswind)</span></span>
+        <input id="rwyInput" type="number" min="0" max="359.9" step="0.1" placeholder="e.g. 248 for RWY 24"
+               class="glass-input w-full px-3 py-2 font-mono text-sm text-amber-100 placeholder-slate-600">
+      </label>
+
+      <button id="submitBtn" type="submit"
+              class="btn-primary w-full rounded-xl py-3 text-sm uppercase tracking-[0.18em] mt-1">
+        Compute flight plan
+      </button>
+    </form>
+  </section>
+
+  <section id="resultsPanel" class="glass p-5 grow overflow-y-auto min-h-0 hidden">
+    <div class="flex items-baseline justify-between sticky -top-5 -mt-5 pt-5 pb-2 bg-transparent z-10">
+      <h2 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Nav Log</h2>
+      <span class="text-[10px] font-mono text-slate-500">E6B CORE</span>
+    </div>
+
+    <div id="crosswindSlot" class="mb-3"></div>
+
+    <div class="grid grid-cols-4 gap-2 mb-4">
+      <div class="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-2.5 text-center">
+        <div class="counter-value text-lg font-extrabold text-neon-cyan neon-text-cyan" id="statDistance">0</div>
+        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">NM total</div>
+      </div>
+      <div class="rounded-xl border border-emerald-300/15 bg-emerald-400/5 p-2.5 text-center">
+        <div class="counter-value text-lg font-extrabold text-neon-emerald" id="statEte">00:00</div>
+        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">ETE</div>
+      </div>
+      <div class="rounded-xl border border-violet-300/15 bg-violet-400/5 p-2.5 text-center">
+        <div class="counter-value text-lg font-extrabold text-neon-violet" id="statFuel">0</div>
+        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5" id="statFuelUnit">GAL</div>
+      </div>
+      <div class="rounded-xl border border-amber-300/15 bg-amber-400/5 p-2.5 text-center">
+        <div class="counter-value text-lg font-extrabold text-neon-amber" id="statGs">0</div>
+        <div class="text-[9px] uppercase tracking-widest text-slate-400 mt-0.5">AVG GS kt</div>
+      </div>
+    </div>
+
+    <div id="warningsSlot" class="space-y-1.5 mb-3"></div>
+
+    <div class="overflow-x-auto rounded-xl border border-white/5">
+      <table class="w-full text-[11px] font-mono">
+        <thead>
+          <tr class="bg-white/5 text-[9px] uppercase tracking-wider text-slate-400">
+            <th class="px-2 py-2 text-left">LEG</th>
+            <th class="px-2 py-2 text-right">TC</th>
+            <th class="px-2 py-2 text-right">WCA</th>
+            <th class="px-2 py-2 text-right">MH</th>
+            <th class="px-2 py-2 text-right">WIND</th>
+            <th class="px-2 py-2 text-right">GS</th>
+            <th class="px-2 py-2 text-right">ETE</th>
+            <th class="px-2 py-2 text-right">FUEL</th>
+          </tr>
+        </thead>
+        <tbody id="legsBody" class="divide-y divide-white/5 text-slate-200"></tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
+      Winds aloft intersected against the gridded forecast at each leg midpoint and ETA.
+      Magnetic variation evaluated with NOAA WMM spherical harmonics at altitude.
+      Reference planning output only — always verify against official AIP/NOTAM before flight.
+    </p>
+  </section>
+</aside>
+
+<section id="terrainPanel" class="glass absolute right-4 top-[76px] z-20 w-[430px] h-[330px] hidden flex-col">
+  <header class="flex items-center justify-between px-4 pt-3 pb-2">
+    <div>
+      <h2 class="text-[12px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Terrain Profile 3D</h2>
+      <p class="text-[9px] text-slate-500 tracking-wide">NASA SRTM DEM · <span class="text-neon-cyan">cyan plane = cruise + 1000ft safety ceiling</span></p>
+    </div>
+    <button id="terrainCollapse" class="chip px-2.5 py-1 text-[10px] font-bold text-slate-300 hover:bg-white/10 transition">HIDE</button>
+  </header>
+  <div class="relative grow mx-3 mb-3 rounded-xl overflow-hidden border border-white/10 bg-[#050b16]">
+    <canvas id="terrainCanvas"></canvas>
+    <div class="absolute bottom-2 right-3 text-[9px] font-mono text-slate-500 pointer-events-none select-none">
+      drag LMB rotate · wheel zoom · RMB pan
+    </div>
+    <div id="terrainLegend" class="absolute top-2 left-3 flex gap-2 text-[9px] font-semibold tracking-wider pointer-events-none select-none">
+      <span class="flex items-center gap-1 text-slate-400"><i class="inline-block h-2 w-2 rounded-sm" style="background:#334155"></i>LOW</span>
+      <span class="flex items-center gap-1 text-slate-400"><i class="inline-block h-2 w-2 rounded-sm" style="background:#34d399"></i>HIGH</span>
+      <span class="flex items-center gap-1 text-rose-300"><i class="inline-block h-2 w-2 rounded-sm" style="background:#ff2b4e"></i>BREACH</span>
+    </div>
+    <div id="terrainLoading" class="absolute inset-0 hidden place-items-center bg-black/40 backdrop-blur-sm">
+      <span class="text-[11px] font-mono text-cyan-200 animate-pulse">sampling SRTM grid…</span>
+    </div>
+  </div>
+</section>
+
+<div id="collisionBanner" class="hidden absolute bottom-0 left-0 right-0 z-40 collision-banner px-6 py-3">
+  <div class="mx-auto flex max-w-3xl items-center justify-center gap-3">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="#ff8098"><path d="M12 2 1 21h22L12 2zm1 14h-2v2h2v-2zm0-6h-2v4h2v-4z"/></svg>
+    <p class="text-[13px] font-bold tracking-wide text-rose-100" id="collisionText">
+      TERRAIN COLLISION RISK: cruise altitude intersects the 1,000 ft VFR safety ceiling.
+    </p>
+  </div>
+</div>
+
+<div id="toastZone" class="absolute top-[76px] left-1/2 -translate-x-1/2 z-50 space-y-2 w-[420px] max-w-[92vw]"></div>
+
+<script id="boot-config" type="application/json">
+{
+  "openaipApiKey": {{ openaip_api_key | tojson }},
+  "ofmTileUrl": {{ ofm_tile_url | tojson }},
+  "mapCenter": {{ map_center | tojson }},
+  "mapBboxSw": {{ map_bbox_sw | tojson }},
+  "mapBboxNe": {{ map_bbox_ne | tojson }},
+  "crosswindLimitKt": {{ crosswind_limit_kt | tojson }},
+  "safetyCeilingFt": {{ safety_ceiling_ft | tojson }}
+}
+</script>
+
+<script>
+"use strict";
+
+const BOOT = JSON.parse(document.getElementById('boot-config').textContent);
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, cls, html) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (html !== undefined) node.innerHTML = html;
+  return node;
+}
+
+async function api(path, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    const response = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || (payload && payload.ok === false)) {
+      const message = payload?.error?.message || `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function showToast(message, kind = 'error', ttl = 5200) {
+  const palette = {
+    error:   ['border-rose-400/50', 'text-rose-100', 'from-rose-500/25'],
+    success: ['border-emerald-400/50', 'text-emerald-100', 'from-emerald-500/25'],
+    warn:    ['border-amber-400/50', 'text-amber-100', 'from-amber-500/25'],
+    info:    ['border-cyan-400/50', 'text-cyan-100', 'from-cyan-500/25'],
+  }[kind] || ['border-slate-400/40', 'text-slate-100', 'from-slate-500/25'];
+  const toast = el('div',
+    `toast glass border ${palette[0]} ${palette[1]} bg-gradient-to-r ${palette[2]} to-transparent px-4 py-2.5 text-[12px] font-medium shadow-glass`,
+    message);
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  $('toastZone').appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-8px)';
+    setTimeout(() => toast.remove(), 380);
+  }, ttl);
+}
+
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+function animateCounter(node, from, to, duration, formatter) {
+  const start = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const value = from + (to - from) * easeOutCubic(t);
+    node.textContent = formatter(value);
+    if (t < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ------------------------------ clock ------------------------------ */
+
+function tickClock() {
+  const now = new Date();
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  const ss = String(now.getUTCSeconds()).padStart(2, '0');
+  $('utcClock').textContent = `${hh}:${mm}:${ss}Z`;
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+/* ------------------------------ mapping ------------------------------ */
+
+const map = new maplibregl.Map({
+  container: 'map',
+  center: BOOT.mapCenter,
+  zoom: 8,
+  pitch: 32,
+  bearing: -14,
+  attributionControl: false,
+  style: {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: {
+      basemap: {
+        type: 'raster',
+        tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
+        tileSize: 256,
+        maxzoom: 20,
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      },
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#04070f' } },
+      { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.92 } },
+    ]
+  }
+});
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+
+let openaipVisible = !!BOOT.openaipApiKey;
+let ofmVisible = !!BOOT.ofmTileUrl;
+
+map.on('load', () => {
+  map.addSource('openaip', {
+    type: 'raster',
+    tiles: [`https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(BOOT.openaipApiKey || '')}`],
+    tileSize: 256,
+    attribution: '&copy; openAIP'
+  });
+  map.addLayer({
+    id: 'openaip-layer', type: 'raster', source: 'openaip',
+    paint: { 'raster-opacity': 0.85 },
+    layout: { visibility: BOOT.openaipApiKey ? 'visible' : 'none' }
+  });
+
+  if (BOOT.ofmTileUrl) {
+    map.addSource('openflightmaps', {
+      type: 'raster',
+      tiles: [BOOT.ofmTileUrl],
+      tileSize: 256,
+      attribution: '&copy; OpenFlightMaps'
+    });
+    map.addLayer({
+      id: 'openflightmaps-layer', type: 'raster', source: 'openflightmaps',
+      paint: { 'raster-opacity': 0.8 },
+      layout: { visibility: 'visible' }
+    });
+  }
+
+  map.addSource('route', { type: 'geojson', data: EMPTY_ROUTE });
+  map.addLayer({
+    id: 'route-glow', type: 'line', source: 'route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#22d3ee', 'line-width': 14, 'line-opacity': 0.16, 'line-blur': 8 }
+  });
+  map.addLayer({
+    id: 'route-core', type: 'line', source: 'route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#67e8f9', 'line-width': 3,
+      'line-opacity': ['case', ['has', 'breach'], 0.9, 0.95]
+    }
+  });
+  map.addSource('waypoints', { type: 'geojson', data: EMPTY_ROUTE });
+  map.addLayer({
+    id: 'waypoint-halo', type: 'circle', source: 'waypoints',
+    paint: {
+      'circle-radius': 13, 'circle-color': '#22d3ee', 'circle-opacity': 0.18,
+      'circle-stroke-width': 1, 'circle-stroke-color': '#67e8f9', 'circle-stroke-opacity': 0.5
+    }
+  });
+  map.addLayer({
+    id: 'waypoint-dot', type: 'circle', source: 'waypoints',
+    paint: { 'circle-radius': 5, 'circle-color': '#e0feff', 'circle-stroke-width': 2, 'circle-stroke-color': '#0891b2' }
+  });
+  map.addLayer({
+    id: 'waypoint-label', type: 'symbol', source: 'waypoints',
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 11,
+      'text-offset': [0, -1.5],
+      'text-anchor': 'bottom',
+      'text-allow-overlap': true
+    },
+    paint: {
+      'text-color': '#cffafe',
+      'text-halo-color': 'rgba(4,10,20,0.9)',
+      'text-halo-width': 1.6
+    }
+  });
+
+  map.addSource('breadcrumb', { type: 'geojson', data: EMPTY_ROUTE });
+  map.addLayer({
+    id: 'breadcrumb-line', type: 'line', source: 'breadcrumb',
+    layout: { 'line-cap': 'round' },
+    paint: { 'line-color': '#34d399', 'line-width': 2.4, 'line-opacity': 0.85, 'line-dasharray': [1.5, 1.5] }
+  });
+
+  map.addSource('gps-accuracy', { type: 'geojson', data: EMPTY_ROUTE });
+  map.addLayer({
+    id: 'gps-accuracy-fill', type: 'fill', source: 'gps-accuracy',
+    paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.12 }
+  });
+  map.addLayer({
+    id: 'gps-accuracy-edge', type: 'line', source: 'gps-accuracy',
+    paint: { 'line-color': '#67e8f9', 'line-width': 1, 'line-opacity': 0.5 }
+  });
+
+  if (!BOOT.openaipApiKey) {
+    $('layerOpenaipToggle').classList.remove('hidden');
+    $('layerOpenaipToggle').classList.add('opacity-40', 'cursor-not-allowed');
+    $('layerOpenaipToggle').title = 'Set OPENAIP_API_KEY server-side to enable live openAIP airspace tiles';
+  } else {
+    $('layerOpenaipToggle').classList.remove('hidden');
+  }
+  if (BOOT.ofmTileUrl) {
+    $('layerOfmToggle').classList.remove('hidden');
+  } else {
+    showToast('OpenFlightMaps tile endpoint not provisioned (OPENFLIGHTMAPS_TILE_URL). OFM rotates infrastructure — supply the current XYZ template to activate their VFR chart layer.', 'info', 8000);
+  }
+
+  setInterval(updateLinkStatus, 20000);
+  updateLinkStatus();
+});
+
+const EMPTY_ROUTE = { type: 'FeatureCollection', features: [] };
+
+function updateLinkStatus() {
+  fetch('/api/health').then(r => r.json()).then(p => {
+    const alive = p && p.ok === true;
+    $('linkDot').className = `pulse-dot h-2 w-2 rounded-full ${alive ? 'bg-emerald-400' : 'bg-rose-500'}`;
+    $('linkLabel').textContent = alive ? 'LINK' : 'DEGRADED';
+  }).catch(() => {
+    $('linkDot').className = 'h-2 w-2 rounded-full bg-rose-500';
+    $('linkLabel').textContent = 'OFFLINE';
+  });
+}
+
+$('layerOpenaipToggle').addEventListener('click', () => {
+  if (!BOOT.openaipApiKey) return;
+  openaipVisible = !openaipVisible;
+  map.setLayoutProperty('openaip-layer', 'visibility', openaipVisible ? 'visible' : 'none');
+});
+$('layerOfmToggle').addEventListener('click', () => {
+  ofmVisible = !ofmVisible;
+  map.setLayoutProperty('openflightmaps-layer', 'visibility', ofmVisible ? 'visible' : 'none');
+});
+
+function renderRoute(legs, labels) {
+  if (!map.getSource('route')) {
+    showToast('Map tiles are still loading — route will not render yet.', 'warn');
+    return;
+  }
+  const features = [];
+  const points = [];
+  legs.forEach((leg, i) => {
+    features.push({
+      type: 'Feature',
+      properties: { index: i + 1, breach: leg.breach === true },
+      geometry: { type: 'LineString', coordinates: leg.geometry.map(([lat, lon]) => [lon, lat]) }
+    });
+    points.push([leg.from_coords[1], leg.from_coords[0]]);
+    if (i === legs.length - 1) points.push([leg.to_coords[1], leg.to_coords[0]]);
+  });
+  map.getSource('route').setData({ type: 'FeatureCollection', features });
+  map.getSource('waypoints').setData({
+    type: 'FeatureCollection',
+    features: points.map((coord, i) => ({
+      type: 'Feature',
+      properties: { label: labels[i] || `WP${i + 1}` },
+      geometry: { type: 'Point', coordinates: coord }
+    }))
+  });
+  const lons = points.map(p => p[0]);
+  const lats = points.map(p => p[1]);
+  map.fitBounds(
+    [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+    { padding: { top: 130, bottom: 320, left: 470, right: 480 }, duration: 1600, maxZoom: 11.2 }
+  );
+}
+
+/* ------------------------------ waypoint chips ------------------------------ */
+
+const waypointList = [];
+
+function renderChips() {
+  const zone = $('wptChips');
+  zone.innerHTML = '';
+  waypointList.forEach((wpt, i) => {
+    const chip = el('div', 'chip flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-cyan-100');
+    chip.append(el('span', null, wpt));
+    const x = el('button', 'chip-remove text-slate-400 hover:text-rose-400 font-bold', '×');
+    x.type = 'button';
+    x.addEventListener('click', () => { waypointList.splice(i, 1); renderChips(); });
+    chip.appendChild(x);
+    zone.appendChild(chip);
+  });
+}
+
+function addWaypointFromInput() {
+  const raw = $('wptInput').value.trim();
+  if (!raw) return;
+  raw.split(/[\s;,]+/).filter(Boolean).forEach(token => {
+    if (/^[A-Za-z]{4}$/.test(token.toUpperCase()) || /^-?\d{1,2}(\.\d+)?,-?\d{1,3}(\.\d+)?$/.test(token)) {
+      waypointList.push(token.toUpperCase());
+    } else {
+      showToast(`Rejected waypoint "${token}" — use an ICAO code or "lat,lon".`, 'warn');
+    }
+  });
+  $('wptInput').value = '';
+  renderChips();
+}
+$('wptAdd').addEventListener('click', addWaypointFromInput);
+$('wptInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addWaypointFromInput(); } });
+
+const altSlider = $('altSlider');
+altSlider.addEventListener('input', () => {
+  const v = parseInt(altSlider.value, 10);
+  $('altDisplay').textContent = v.toLocaleString('en-US');
+  $('flDisplay').textContent = 'FL' + String(Math.round(v / 100)).padStart(3, '0');
+});
+altSlider.dispatchEvent(new Event('input'));
+
+/* ------------------------------ nav log flow ------------------------------ */
+
+const form = $('routeForm');
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const btn = $('submitBtn');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'COMPUTING…';
+
+  const entries = [$('depInput').value.trim(), ...waypointList, $('arrInput').value.trim()].filter(Boolean);
+  const body = {
+    departure: entries[0],
+    arrival: entries[entries.length - 1],
+    waypoints: entries.slice(1, -1),
+    cruise_altitude_ft: parseInt(altSlider.value, 10),
+    tas_kt: parseFloat($('tasInput').value),
+    fuel_rate: parseFloat($('fuelInput').value),
+    fuel_unit: $('fuelUnit').value,
+  };
+  const rwy = parseFloat($('rwyInput').value);
+  if (!Number.isNaN(rwy)) body.destination_runway_heading_deg = rwy;
+
+  try {
+    const result = await api('/api/navigation/log', { method: 'POST', body });
+    presentNavLog(result);
+    await loadTerrainFor(result);
+  } catch (err) {
+    showToast(`Flight plan failed: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
+function presentNavLog(data) {
+  const totals = data.totals;
+
+  $('resultsPanel').classList.remove('hidden');
+  const sidebar = $('sidebar');
+  sidebar.classList.remove('sidebar-enter');
+  sidebar.classList.add('sidebar-visible');
+
+  animateCounter($('statDistance'), 0, totals.distance_nm, 1400, v => v.toFixed(1));
+  const eteMinutes = totals.ete_min;
+  animateCounter($('statEte'), 0, eteMinutes, 1400, v => {
+    const m = Math.round(v);
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  });
+  animateCounter($('statFuel'), 0, totals.fuel, 1400, v => v.toFixed(1));
+  $('statFuelUnit').textContent = data.fuel_unit === 'LPH' ? 'LTR' : 'GAL';
+  animateCounter($('statGs'), 0, totals.average_groundspeed_kt, 1400, v => Math.round(v));
+
+  const legsBody = $('legsBody');
+  legsBody.innerHTML = '';
+  data.legs.forEach(leg => {
+    const windTxt = leg.wind?.provider === 'none'
+      ? 'CALM/—'
+      : `${Math.round(leg.wind.wind_from_deg_true)}°/${Math.round(leg.wind.wind_speed_kt)}kt`;
+    const row = el('tr', 'hover:bg-white/[0.04]');
+    row.innerHTML = `
+      <td class="px-2 py-2 text-cyan-200 font-bold">${leg.from}<span class="text-slate-500">→</span>${leg.to}</td>
+      <td class="px-2 py-2 text-right">${leg.true_course_deg.toFixed(0)}°</td>
+      <td class="px-2 py-2 text-right ${leg.wind_correction_angle_deg >= 0 ? 'text-emerald-300' : 'text-amber-300'}">${leg.wind_correction_angle_deg >= 0 ? '+' : ''}${leg.wind_correction_angle_deg.toFixed(1)}°</td>
+      <td class="px-2 py-2 text-right text-violet-300">${leg.magnetic_heading_deg.toFixed(0)}°</td>
+      <td class="px-2 py-2 text-right ${leg.wind.provider === 'none' ? 'text-slate-500' : 'text-sky-300'}">${windTxt}</td>
+      <td class="px-2 py-2 text-right text-emerald-300">${leg.ground_speed_kt.toFixed(0)}</td>
+      <td class="px-2 py-2 text-right">${leg.ete_min.toFixed(0)}m</td>
+      <td class="px-2 py-2 text-right">${leg.fuel_gal.toFixed(1)}</td>`;
+    legsBody.appendChild(row);
+  });
+
+  const warnSlot = $('warningsSlot');
+  warnSlot.innerHTML = '';
+  (data.warnings || []).forEach(w => {
+    warnSlot.appendChild(el('div', 'rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-100', w));
+  });
+
+  const slot = $('crosswindSlot');
+  slot.innerHTML = '';
+  if (data.crosswind) {
+    const cw = data.crosswind;
+    if (cw.exceeds_limit) {
+      const flag = el('div', 'warning-flag rounded-xl bg-rose-500/15 px-4 py-3 flex items-center gap-3');
+      flag.innerHTML = `
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#ff8098"><path d="M4 4h16v2H4zM6 6h2v14H6zM6 6h12l-3 4 3 4H6z"/></svg>
+        <div>
+          <div class="text-[13px] font-extrabold tracking-wide text-rose-100">CROSSWIND ${cw.crosswind_kt.toFixed(1)} KT AT ${cw.icao}</div>
+          <div class="text-[10px] text-rose-200/80 font-mono">limit ${cw.limit_kt} kt · headwind ${cw.headwind_kt.toFixed(1)} kt · wind ${Math.round(cw.wind_from_deg_true)}°/${cw.wind_speed_kt.toFixed(0)} kt vs RWY ${cw.runway_heading_magnetic_deg.toFixed(0)}°M</div>
+        </div>`;
+      slot.appendChild(flag);
+    } else {
+      const okChip = el('div', 'rounded-xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-2.5 text-[11px] font-mono text-emerald-100',
+        `✓ CROSSWIND OK ${cw.crosswind_kt.toFixed(1)} kt (${cw.icao}) · headwind ${cw.headwind_kt.toFixed(1)} kt`);
+      slot.appendChild(okChip);
+    }
+  }
+
+  renderRoute(data.legs, data.route);
+  showToast('Flight plan computed — E6B solution locked.', 'success', 3600);
+}
+
+/* ------------------------------ 3D terrain ------------------------------ */
+
+class TerrainScene {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(52, 1, 1, 60000);
+
+    this.root = new THREE.Group();
+    this.scene.add(this.root);
+
+    this.scene.add(new THREE.AmbientLight(0xbfd8ff, 0.85));
+    const sun = new THREE.DirectionalLight(0xfff4de, 1.05);
+    sun.position.set(-600, 900, 400);
+    this.scene.add(sun);
+    const rim = new THREE.DirectionalLight(0x22d3ee, 0.35);
+    rim.position.set(500, 200, -600);
+    this.scene.add(rim);
+
+    this.spherical = { theta: -0.9, phi: 1.02 };
+    this.distance = 2600;
+    this.target = new THREE.Vector3(0, 120, 0);
+
+    this._bindControls();
+    this._resize();
+    new ResizeObserver(() => this._resize()).observe(canvas.parentElement);
+
+    const self = this;
+    (function loop() {
+      requestAnimationFrame(loop);
+      self.renderer.render(self.scene, self.camera);
+      self._applyCamera();
+    })();
+  }
+
+  _bindControls() {
+    const cv = this.canvas;
+    let mode = null;
+    let lastX = 0, lastY = 0;
+
+    cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    cv.addEventListener('pointerdown', (e) => {
+      cv.setPointerCapture(e.pointerId);
+      if (e.button === 0) { mode = 'rotate'; cv.classList.add('dragging'); }
+      else if (e.button === 2) { mode = 'pan'; cv.classList.add('panning'); }
+      lastX = e.clientX; lastY = e.clientY;
+    });
+
+    cv.addEventListener('pointermove', (e) => {
+      if (!mode) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (mode === 'rotate') {
+        this.spherical.theta -= dx * 0.006;
+        this.spherical.phi = Math.min(1.52, Math.max(0.12, this.spherical.phi - dy * 0.005));
+      } else if (mode === 'pan') {
+        const scale = this.distance * 0.0012;
+        const sinT = Math.sin(this.spherical.theta), cosT = Math.cos(this.spherical.theta);
+        this.target.x -= (cosT * dx - sinT * dy * 0.4) * scale;
+        this.target.z += (sinT * dx + cosT * dy * 0.4) * scale;
+        this.target.y = Math.max(0, this.target.y - dy * scale * 0.4);
+      }
+    });
+
+    const endPointer = () => { mode = null; cv.classList.remove('dragging'); cv.classList.remove('panning'); };
+    cv.addEventListener('pointerup', endPointer);
+    cv.addEventListener('pointercancel', endPointer);
+
+    cv.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = Math.exp(e.deltaY * 0.0011);
+      this.distance = Math.min(22000, Math.max(220, this.distance * factor));
+    }, { passive: false });
+  }
+
+  _resize() {
+    const parent = this.canvas.parentElement;
+    const w = parent.clientWidth || 380;
+    const h = parent.clientHeight || 240;
+    this.canvas.width = Math.floor(w * Math.min(window.devicePixelRatio, 2));
+    this.canvas.height = Math.floor(h * Math.min(window.devicePixelRatio, 2));
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  _applyCamera() {
+    const { theta, phi } = this.spherical;
+    const x = this.target.x + this.distance * Math.sin(phi) * Math.cos(theta);
+    const y = this.target.y + this.distance * Math.cos(phi);
+    const z = this.target.z + this.distance * Math.sin(phi) * Math.sin(theta);
+    this.camera.position.set(x, y, z);
+    this.camera.lookAt(this.target);
+  }
+
+  clear() {
+    while (this.root.children.length) {
+      const child = this.root.children.pop();
+      child.traverse?.(obj => {
+        obj.geometry?.dispose?.();
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material?.dispose?.();
+      });
+      this.root.remove(child);
+    }
+  }
+
+  load(profile) {
+    this.clear();
+    const samples = profile.samples.filter(s => s.terrain_ft !== null);
+    if (samples.length < 2) {
+      showToast('Terrain samples unavailable along this route.', 'warn');
+      return;
+    }
+
+    const HORIZ_SCALE = 90;
+    const VERT_SCALE = 0.115;
+    const LANE_COUNT = 7;
+    const LANE_WIDTH = 340;
+
+    const cols = Math.min(samples.length, 110);
+    const stride = (samples.length - 1) / (cols - 1);
+    const columnSamples = [];
+    for (let c = 0; c < cols; c++) columnSamples.push(samples[Math.round(c * stride)]);
+
+    const positions = [];
+    const colors = [];
+    const indices = [];
+    const cruiseY = profile.cruise_altitude_ft * VERT_SCALE;
+    const lowColor = new THREE.Color('#16283f');
+    const midColor = new THREE.Color('#134e4a');
+    const highColor = new THREE.Color('#34d399');
+    const breachColor = new THREE.Color('#ff2b4e');
+
+    const breachSet = new Set(profile.breach_indices);
+    const sampleIndexOfColumn = [];
+    let cursor = 0;
+    for (let c = 0; c < cols; c++) {
+      while (cursor < samples.length - 1 && samples[cursor] !== columnSamples[c]) cursor++;
+      sampleIndexOfColumn.push(cursor);
+    }
+
+    const tmpColor = new THREE.Color();
+    for (let r = 0; r < LANE_COUNT; r++) {
+      const laneT = r / (LANE_COUNT - 1) - 0.5;
+      for (let c = 0; c < cols; c++) {
+        const smp = columnSamples[c];
+        const domeFall = 1 - Math.pow(Math.abs(laneT) * 2, 2.4) * 0.42;
+        const y = Math.max(2, smp.terrain_ft * VERT_SCALE * domeFall);
+        positions.push(c * HORIZ_SCALE, y, laneT * LANE_WIDTH);
+
+        const tNorm = Math.min(1, Math.max(0, smp.terrain_ft / 4200));
+        if (tNorm < 0.5) tmpColor.copy(lowColor).lerp(midColor, tNorm * 2);
+        else tmpColor.copy(midColor).lerp(highColor, (tNorm - 0.5) * 2);
+
+        const isBreach = breachSet.has(sampleIndexOfColumn[c]);
+        if (isBreach) tmpColor.lerp(breachColor, 0.92);
+        colors.push(tmpColor.r, tmpColor.g, tmpColor.b);
+      }
+    }
+
+    for (let r = 0; r < LANE_COUNT - 1; r++) {
+      for (let c = 0; c < cols - 1; c++) {
+        const a = r * cols + c;
+        const b = a + 1;
+        const d = (r + 1) * cols + c;
+        const e = d + 1;
+        indices.push(a, d, b, b, d, e);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.86, metalness: 0.08,
+      flatShading: false, side: THREE.DoubleSide,
+      emissive: new THREE.Color('#20060a'), emissiveIntensity: 0.0
+    }));
+    this.root.add(mesh);
+
+    const planeGeo = new THREE.PlaneGeometry((cols - 1) * HORIZ_SCALE + 160, LANE_WIDTH + 160);
+    const planeMat = new THREE.MeshBasicMaterial({
+      color: 0x38e1ff, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false
+    });
+    const safetyPlane = new THREE.Mesh(planeGeo, planeMat);
+    safetyPlane.rotation.x = -Math.PI / 2;
+    safetyPlane.position.set(((cols - 1) * HORIZ_SCALE) / 2, cruiseY + 0, 0);
+    this.root.add(safetyPlane);
+
+    const edgeGeo = new THREE.EdgesGeometry(planeGeo);
+    const edgeLines = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({
+      color: 0x7df0ff, transparent: true, opacity: 0.75
+    }));
+    edgeLines.rotation.x = -Math.PI / 2;
+    edgeLines.position.copy(safetyPlane.position);
+    this.root.add(edgeLines);
+
+    const depPillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(9, 9, cruiseY, 14),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.35 })
+    );
+    depPillar.position.set(0, cruiseY / 2, -LANE_WIDTH / 2 - 40);
+    this.root.add(depPillar);
+
+    const arrPillar = depPillar.clone();
+    arrPillar.position.set((cols - 1) * HORIZ_SCALE, cruiseY / 2, LANE_WIDTH / 2 + 40);
+    this.root.add(arrPillar);
+
+    const spanX = (cols - 1) * HORIZ_SCALE;
+    this.target.set(spanX / 2, Math.max(cruiseY * 0.55, 160), 0);
+    this.distance = Math.max(2400, spanX * 0.85);
+    this.spherical.theta = -0.95;
+    this.spherical.phi = 0.98;
+  }
+}
+
+const terrainScene = new TerrainScene($('terrainCanvas'));
+let terrainCollapsed = false;
+
+$('terrainCollapse').addEventListener('click', () => {
+  terrainCollapsed = !terrainCollapsed;
+  const panel = $('terrainPanel');
+  panel.classList.toggle('h-[46px]', terrainCollapsed);
+  panel.classList.toggle('h-[330px]', !terrainCollapsed);
+  panel.querySelector('.grow').style.visibility = terrainCollapsed ? 'hidden' : 'visible';
+  $('terrainCollapse').textContent = terrainCollapsed ? 'SHOW' : 'HIDE';
+  setTimeout(() => terrainScene._resize(), 60);
+});
+
+async function loadTerrainFor(navlog) {
+  const coords = [];
+  navlog.legs.forEach(leg => leg.geometry.forEach(([lat, lon], idx) => {
+    if (idx % 3 === 0) coords.push([lat, lon]);
+  }));
+  if (coords.length > 120) coords.length = 120;
+
+  $('terrainPanel').classList.remove('hidden');
+  $('terrainPanel').classList.add('flex');
+  $('terrainLoading').classList.remove('hidden');
+  $('terrainLoading').classList.add('grid');
+
+  try {
+    const result = await api('/api/terrain/profile', {
+      method: 'POST',
+      body: { waypoints: coords, cruise_altitude_ft: navlog.cruise_altitude_ft }
+    });
+    terrainScene.load(result.profile);
+
+    const banner = $('collisionBanner');
+    if (result.collision_alert) {
+      const breaches = result.profile.breach_indices.length;
+      const worstClearance = result.profile.min_clearance_ft;
+      $('collisionText').textContent =
+        `TERRAIN COLLISION RISK: ${breaches} sectors below the 1,000 ft VFR safety ceiling — worst margin ${worstClearance < 0 ? '' : '+'}${Math.round(worstClearance)} ft vs cruise ${navlog.cruise_altitude_ft.toLocaleString('en-US')} ft.`;
+      banner.classList.remove('hidden');
+      showToast('Terrain conflict detected — inspect the red mesh sectors in 3D view.', 'warn', 6500);
+    } else {
+      banner.classList.add('hidden');
+    }
+  } catch (err) {
+    showToast(`Terrain engine failed: ${err.message}`, 'error');
+  } finally {
+    $('terrainLoading').classList.add('hidden');
+    $('terrainLoading').classList.remove('grid');
+  }
+}
+
+/* ------------------------------ GPS streaming ------------------------------ */
+
+const GpsManager = (() => {
+  let watching = false;
+  let watchId = null;
+  let trail = [];
+  const QUEUE_KEY = 'richdale_gps_queue_v1';
+
+  function readQueue() {
+    try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
+  }
+  function writeQueue(q) {
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-600))); } catch { /* storage full */ }
+  }
+
+  const markerEl = document.createElement('div');
+  markerEl.className = 'gps-marker';
+  markerEl.style.position = 'relative';
+  const ping = document.createElement('span');
+  ping.className = 'gps-ping';
+  markerEl.appendChild(ping);
+
+  const marker = new maplibregl.Marker({ element: markerEl });
+
+  function accuracyRingFeature(lon, lat, radiusMeters) {
+    const points = [];
+    const angular = radiusMeters / 6378137.0;
+    for (let i = 0; i <= 64; i++) {
+      const bearing = (i * 360.0 / 64.0) * Math.PI / 180.0;
+      const lat1 = lat * Math.PI / 180.0;
+      const lon1 = lon * Math.PI / 180.0;
+      const lat2 = Math.asin(
+        Math.sin(lat1) * Math.cos(angular) + Math.cos(lat1) * Math.sin(angular) * Math.cos(bearing)
+      );
+      const lon2 = lon1 + Math.atan2(
+        Math.sin(bearing) * Math.sin(angular) * Math.cos(lat1),
+        Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2)
+      );
+      points.push([lon2 * 180.0 / Math.PI, lat2 * 180.0 / Math.PI]);
+    }
+    return {
+      type: 'Feature', properties: {},
+      geometry: { type: 'Polygon', coordinates: [points] }
+    };
+  }
+
+  function setAccuracyRing(lon, lat, radiusMeters) {
+    if (!map.getSource('gps-accuracy')) return;
+    if (!(typeof radiusMeters === 'number') || !isFinite(radiusMeters) || radiusMeters <= 0) {
+      map.getSource('gps-accuracy').setData(EMPTY_ROUTE);
+      return;
+    }
+    map.getSource('gps-accuracy').setData({
+      type: 'FeatureCollection', features: [accuracyRingFeature(lon, lat, radiusMeters)]
+    });
+  }
+
+  function setStatus(state, label) {
+    const dot = $('gpsDot');
+    dot.className = `h-2 w-2 rounded-full ${state}`;
+    $('gpsLabel').textContent = label;
+  }
+
+  async function flushQueue() {
+    const q = readQueue();
+    if (!q.length) return;
+    try {
+      const res = await api('/api/gps/ingest', { method: 'POST', body: { positions: q.slice(-200) } });
+      writeQueue(q.slice(res.accepted));
+      if (res.accepted > 0) showToast(`${res.accepted} buffered GPS fix(es) re-synced after reconnect.`, 'info', 3500);
+    } catch { /* stay queued */ }
+  }
+
+  window.addEventListener('online', () => { updateLinkStatus(); flushQueue(); });
+  window.addEventListener('offline', () => showToast('Cellular/data dropped — GPS keeps tracking locally.', 'warn'));
+
+  function handleFix(position) {
+    const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords;
+    const coord = [longitude, latitude];
+
+    if (!marker.getMap()) marker.setLngLat(coord).addTo(map);
+    else marker.setLngLat(coord);
+
+    setAccuracyRing(longitude, latitude, accuracy);
+
+    trail.push(coord);
+    if (trail.length > 800) trail.shift();
+    if (map.getSource('breadcrumb')) {
+      map.getSource('breadcrumb').setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trail } }]
+      });
+    }
+
+    if (!navigator.onLine) {
+      const q = readQueue();
+      q.push({ latitude, longitude, accuracy, altitude, heading, speed, timestamp: position.timestamp });
+      writeQueue(q);
+    }
+
+    setStatus('bg-emerald-400 pulse-dot', 'GPS LIVE');
+  }
+
+  function handleError(err) {
+    const messages = {
+      1: 'GPS permission denied — enable location for this site.',
+      2: 'Position unavailable — no GNSS fix yet.',
+      3: 'GPS timeout — keep the device sky-facing.',
+    };
+    setStatus('bg-rose-500', 'GPS ERR');
+    showToast(messages[err.code] || 'GPS failure.', 'error');
+  }
+
+  return {
+    toggle() {
+      if (!('geolocation' in navigator)) {
+        showToast('This browser exposes no Geolocation API.', 'error');
+        return;
+      }
+      if (watching) {
+        navigator.geolocation.clearWatch(watchId);
+        watching = false;
+        marker.remove();
+        setAccuracyRing(0, 0, NaN);
+        trail = [];
+        if (map.getSource('breadcrumb')) map.getSource('breadcrumb').setData(EMPTY_ROUTE);
+        setStatus('bg-slate-500', 'GPS OFF');
+        return;
+      }
+      watchId = navigator.geolocation.watchPosition(handleFix, handleError, {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 15000,
+      });
+      watching = true;
+      setStatus('bg-amber-400 pulse-dot', 'GPS ACQ…');
+      flushQueue();
+    },
+  };
+})();
+
+$('gpsToggle').addEventListener('click', () => GpsManager.toggle());
+window.addEventListener('online', updateLinkStatus);
+
+setTimeout(() => {
+  map.fitBounds([BOOT.mapBboxSw.slice().reverse(), BOOT.mapBboxNe.slice().reverse()],
+    { padding: { top: 120, bottom: 300, left: 440, right: 460 }, duration: 2200, maxZoom: 9.4 });
+}, 350);
+</script>
+</body>
+</html>

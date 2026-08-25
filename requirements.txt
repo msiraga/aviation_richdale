@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+jinja2
+pydantic
+xmltodict
+beautifulsoup4
+pypdf
+pillow
