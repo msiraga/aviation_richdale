@@ -847,6 +847,7 @@ tailwind.config = {
 <script id="boot-config" type="application/json">
 {
   "openaipApiKey": {{ openaip_api_key | tojson }},
+  "aemetApiKey": {{ aemet_api_key | tojson }},
   "ofmTileUrl": {{ ofm_tile_url | tojson }},
   "mapCenter": {{ map_center | tojson }},
   "mapBboxSw": {{ map_bbox_sw | tojson }},
@@ -4770,31 +4771,63 @@ async function loadSpainSigmet() {
 $('briefRefresh')?.addEventListener('click', loadAirportBrief);
 $('sigmetRefresh')?.addEventListener('click', loadSpainSigmet);
 
-/* ---------------- AEMET SIGWX charts (key-gated, honest degradation) ------ */
+/* ---------------- AEMET SIGWX charts — client-side (browser passes F5) ---- */
 
 let sigwxBusy = false;
+
+async function aemetFetchJson(path) {
+  if (!BOOT.aemetApiKey) throw new Error('AEMET_API_KEY not configured (.env.txt)');
+  const r = await fetch(`https://opendata.aemet.es/opendata/api${path}?apikey=${encodeURIComponent(BOOT.aemetApiKey)}`);
+  const body = await r.json().catch(() => { throw new Error('AEMET returned non-JSON'); });
+  if (!body.datos) throw new Error(body.descripcion || `AEMET estado ${body.estado}: no data URL`);
+  return body;
+}
 
 async function sigwxGo(ambito, dia) {
   if (sigwxBusy) return;
   sigwxBusy = true;
   const box = $('sigwxBody');
-  box.innerHTML = '<span class="text-slate-500">fetching chart…</span>';
+  const label = ambito === '__analisis' ? 'surface analysis'
+    : `${ambito.toUpperCase()} D${dia}`;
+  box.innerHTML = `<span class="text-slate-500">fetching ${label} chart via your browser…</span>`;
+  $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
   try {
-    const res = ambito === '__analisis'
-      ? await api('/api/aemet/sigwx?ambito=__analisis')
-      : await api(`/api/aemet/sigwx?ambito=${encodeURIComponent(ambito)}&dia=${dia}`);
-    const imgs = (res.images || []);
+    const path = ambito === '__analisis'
+      ? '/mapasygraficos/analisis'
+      : `/mapasygraficos/mapassignificativos/fecha/${new Date().toISOString().slice(0, 10)}/${ambito}/${dia}`;
+    const meta = await aemetFetchJson(path);
+    // datos may be an image itself, or JSON listing images
+    const head = await fetch(meta.datos);
+    const ctype = head.headers.get('content-type') || '';
+    let urls = [];
+    let caption = '';
+    if (ctype.startsWith('image/')) {
+      urls = [meta.datos];
+    } else {
+      const text = await head.text();
+      try {
+        const parsed = JSON.parse(text);
+        for (const it of (Array.isArray(parsed) ? parsed : [parsed])) {
+          if (it.url) urls.push(it.url);
+          if (!caption && it.titulo) caption = it.titulo;
+        }
+      } catch {
+        const m = text.match(/https?:\/\/[^\s"']+\.(?:gif|png|jpe?g)/);
+        if (m) urls.push(m[0]);
+      }
+    }
+    if (!urls.length) throw new Error('payload contained no image reference');
     box.innerHTML =
-      (res.caption ? `<div class="text-[10px] text-slate-400 mb-1">${res.caption}</div>` : '') +
-      imgs.map(i => `<img src="${i.src}" alt="AEMET SIGWX" class="w-full rounded-lg my-1 bg-white/5">`).join('') +
-      `<div class="text-[8px] text-slate-500 mt-1">source: ${res.source} · ${new Date().toLocaleTimeString()}Z</div>`;
-    $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
+      (caption ? `<div class="text-[10px] text-slate-400 mb-1">${caption}</div>` : '') +
+      urls.map(u => `<img src="${u}" alt="AEMET SIGWX" class="w-full rounded-lg my-1 bg-white/5">`).join('') +
+      `<div class="text-[8px] text-slate-500 mt-1">source: AEMET OpenData · fetched by your browser · ${new Date().toLocaleTimeString()}Z</div>`;
   } catch (err) {
     let msg = err.message || 'unknown error';
-    if (/empty response/i.test(msg)) msg += ' — their gateway is not delivering data on this network; press DIAGNOSE for proof.';
+    if (/Failed to fetch/i.test(msg)) msg = 'your browser could not reach opendata.aemet.es — check network';
     if (/not configured/i.test(msg)) msg += ' — add your free key as AEMET_API_KEY in .env.txt.';
-    box.innerHTML = `<span class="text-amber-300">${msg}</span>`;
-    $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
+    box.innerHTML = `<span class="text-amber-300">${msg}</span>
+      <div class="mt-1"><a class="chip px-2 py-0.5 text-[9px] inline-block" target="_blank" rel="noopener"
+        href="https://www.aemet.es/es/eltiempo/prediccion/aeronautica">open AEMET aviation page instead</a></div>`;
   } finally { sigwxBusy = false; }
 }
 
@@ -4804,17 +4837,7 @@ $('sigwxTabs')?.addEventListener('click', (ev) => {
   ev.stopPropagation();
   $('sigwxTabs').querySelectorAll('button').forEach(x => x.style.background = '');
   b.style.background = 'rgba(167,139,250,.3)';
-  if (b.dataset.a === '__analisis') {
-    sigwxBusy = true;
-    const box = $('sigwxBody');
-    api('/api/aemet/analisis').then(res => {
-      box.innerHTML = (res.images || []).map(i => `<img src="${i.src}" class="w-full rounded-lg my-1 bg-white/5">`).join('') +
-        `<div class="text-[8px] text-slate-500 mt-1">surface analysis · source: AEMET OpenData</div>`;
-    }).catch(e => { box.innerHTML = `<span class="text-amber-300">${e.message}</span>`; })
-      .finally(() => { sigwxBusy = false; });
-  } else {
-    sigwxGo(b.dataset.a, parseInt(b.dataset.d, 10) || 0);
-  }
+  sigwxGo(b.dataset.a, parseInt(b.dataset.d, 10) || 0);
 });
 
 $('sigwxDiag')?.addEventListener('click', async () => {
@@ -4824,7 +4847,8 @@ $('sigwxDiag')?.addEventListener('click', async () => {
     if (!d.configured) { box.innerHTML = `<span class="text-amber-300">${d.note}</span>`; return; }
     box.innerHTML = d.probes.map(p =>
       `<div>${p.probe}: ${p.error ? p.error : `HTTP ${p.status}, ${p.bytes} bytes`}</div>`
-    ).join('') + `<div class="mt-1 ${d.gateway_serving_data ? 'text-emerald-300' : 'text-rose-300'}">${d.note}</div>`;
+    ).join('') + `<div class="mt-1 ${d.gateway_serving_data ? 'text-emerald-300' : 'text-rose-300'}">${d.note}</div>
+      <div class="text-[9px] text-slate-400 mt-1.5">Server-side requests are filtered by AEMET's bot shield — the CHART BUTTONS above fetch through your browser instead and normally work.</div>`;
   } catch (err) { box.innerHTML = `<span class="text-rose-300">diag failed: ${err.message}</span>`; }
 });
 

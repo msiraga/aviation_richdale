@@ -178,13 +178,14 @@ step · and what's **behind it** (data source, physics, honest limits).
 * **Cloud strip** — 12 h of low/mid/high cloud columns at the route midpoint.
 
 > **AEMET SIGWX charts** live behind their OpenData API. Put your free key
-> in `.env.txt` as `AEMET_API_KEY=…` (the file is git-ignored; values are
-> never logged). The **SIGWX · AEMET** card then offers España D0/D+1,
-> Baleares, Canarias and the surface-analysis chart. If their gateway serves
-> empty responses — which it demonstrably does on some networks even with a
-> valid key — press **DIAGNOSE** on the card: it prints per-endpoint HTTP
-> status and byte counts straight from `/api/aemet/diag`, so you see exactly
-> where it breaks instead of staring at a blank panel.
+> in `.env.txt` as `AEMET_API_KEY=…` (git-ignored, never logged). The
+> **SIGWX · AEMET** card fetches the charts **through your browser**, which is
+> also how you get past AEMET's bot shield: their F5 gateway silently returns
+> empty bodies to server-side/scripted clients (proven by the DIAGNOSE
+> button's per-endpoint HTTP + byte counts) while real browsers sail through.
+> España D0/D+1, Baleares, Canarias and the surface-analysis chart all use
+> this path; if your own browser ever gets challenged too, the card offers a
+> direct link to AEMET's aviation page.
 
 ### 4.5 NOTAMS tab
 Automatic bounding-box fetch around the whole route, active items only

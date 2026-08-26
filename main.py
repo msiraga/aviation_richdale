@@ -1,4 +1,4 @@
-﻿"""VFR flight-planning platform service.
+"""VFR flight-planning platform service.
 
 FastAPI application wiring the live weather engine, the E6B navigation core,
 the terrain awareness pipeline, and the ENAIRE AIP compliance layer behind a
@@ -484,6 +484,7 @@ async def index(request: Request):
     context = {
         "request": request,
         "openaip_api_key": openaip_key or "",
+        "aemet_api_key": os.environ.get("AEMET_API_KEY", ""),
         "ofm_tile_url": ofm_template or "",
         "map_center": DEFAULT_MAP_CENTER,
         "map_bbox_sw": DEFAULT_MAP_BBOX_SW,
