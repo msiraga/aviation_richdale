@@ -1567,7 +1567,7 @@ $('simReplayBtn')?.addEventListener('click', async () => {
     }
     simRun.raf = requestAnimationFrame(simRun.ctx.frame);
   } catch (err) {
-    showToast(`Simulation failed: ${err.message}`, 'error');
+    showToast(`Simulation failed: ${err.message} — if you just updated Richdale, restart the server (Python changes need a restart).`, 'error', 8000);
   } finally {
     btn.disabled = false;
   }
@@ -4089,8 +4089,8 @@ $('rpToggle')?.addEventListener('click', () => {
 });
 
 async function loadReportingPoints(navlog) {
-  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])
-    .filter(i => /^LE[A-Z]{2}$/.test(i || ''))];
+  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])]
+    .filter(i => /^LE[A-Z]{2}$/.test(i || ''));
   if (!icaos.length) return;
   const fresh = [];
   for (const icao of icaos) {
@@ -4650,8 +4650,8 @@ const CAT_BG = { VFR: '#22c55e', MVFR: '#3b82f6', IFR: '#ef4444' };
 
 async function loadTafTimelines(navlog) {
   const box = $('tafTimeline');
-  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])
-    .filter(i => /^[A-Z]{4}$/.test(i || ''))];
+  const icaos = [...new Set([navlog.route?.[0], navlog.route?.at(-1)])]
+    .filter(i => /^[A-Z]{4}$/.test(i || ''));
   if (!icaos.length) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   box.innerHTML = '<div class="text-[10px] tracking-widest text-slate-500 uppercase">TAF windows…</div>';
