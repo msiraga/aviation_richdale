@@ -1,4 +1,4 @@
-"""VFR flight-planning platform service.
+﻿"""VFR flight-planning platform service.
 
 FastAPI application wiring the live weather engine, the E6B navigation core,
 the terrain awareness pipeline, and the ENAIRE AIP compliance layer behind a
@@ -12,6 +12,7 @@ stack traces, and filesystem paths never cross the boundary.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import math
 import os
@@ -26,7 +27,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,6 +72,34 @@ logging.basicConfig(
 log = logging.getLogger("richdale.main")
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _load_env_file() -> None:
+    """Tiny .env loader (.env.txt or .env): KEY=VALUE lines, '#' comments.
+
+    Real environment variables always win over file values. Values are never
+    logged anywhere.
+    """
+    for name in (".env", ".env.txt"):
+        p = BASE_DIR / name
+        if not p.is_file():
+            continue
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k:
+                    os.environ.setdefault(k, v)
+            log.info("loaded env overrides from %s", name)
+        except OSError as exc:
+            log.warning("could not read %s: %s", name, exc)
+
+
+_load_env_file()
 DATA_DIR = Path(os.environ.get("RICHDALE_DATA_DIR", BASE_DIR / "data"))
 TEMPLATES_DIR = BASE_DIR / "templates"
 
@@ -342,13 +371,13 @@ async def resolve_waypoints(
                 hit = _rp_lookup(rest)
                 if hit is None:
                     raise BadRequest(
-                        f"reporting point '{rest}' is not indexed yet — open that airport's "
+                        f"reporting point '{rest}' is not indexed yet â€” open that airport's "
                         "VAC once, or use the ICAO:NAME form (e.g. LEVC:FOIOS)"
                     )
                 resolved.append((LatLon(latitude=hit["latitude"], longitude=hit["longitude"]),
                                  f"RP {rest}"))
                 continue
-            if len(prefix) == 4:  # ICAO:NAME — load this field's chart on demand
+            if len(prefix) == 4:  # ICAO:NAME â€” load this field's chart on demand
                 try:
                     snap = await enaire_service.get_ad2(prefix)
                 except Exception as exc:  # noqa: BLE001 - explicit degradation
@@ -367,7 +396,7 @@ async def resolve_waypoints(
                     raise BadRequest(f"'{rest}' not among {prefix} reporting points ({known})")
                 continue
             raise BadRequest(
-                f"unknown prefix '{prefix}:' — use VOR:, NDB:, DME:, RP: or ICAO:NAME"
+                f"unknown prefix '{prefix}:' â€” use VOR:, NDB:, DME:, RP: or ICAO:NAME"
             )
 
         # ---- bare idents: local airports first, then NOAA station, then navaid
@@ -381,7 +410,7 @@ async def resolve_waypoints(
         try:
             station = await engine.resolve_station(key)
         except (UnknownStation, WeatherServiceError):
-            # no live METAR station by that ident — fall through to navaids
+            # no live METAR station by that ident â€” fall through to navaids
             station = None
         if station is not None:
             resolved.append(
@@ -395,7 +424,7 @@ async def resolve_waypoints(
                                  f"{hit['ident']} {hit['type']}"))
                 continue
         raise BadRequest(
-            f"unresolved waypoint '{label}' — use an airport ICAO, navaid ident "
+            f"unresolved waypoint '{label}' â€” use an airport ICAO, navaid ident "
             "(VOR:/NDB:), RP:NAME / ICAO:NAME, or 'lat,lon'"
         )
 
@@ -405,7 +434,7 @@ async def resolve_waypoints(
 
 
 # Reporting points seen so far this process: NAME -> {icao, latitude, longitude}
-# Populated opportunistically whenever an AD-2 snapshot is loaded — never by
+# Populated opportunistically whenever an AD-2 snapshot is loaded â€” never by
 # mass-downloading charts. Honest gap: RP:NAME fails until a chart is opened
 # or the ICAO:NAME form loads it explicitly.
 _reporting_point_index: dict[str, dict[str, Any]] = {}
@@ -464,7 +493,7 @@ async def index(request: Request):
         "build_id": f"b{datetime.fromtimestamp(build_stamp, tz=timezone.utc).strftime('%y%m%d.%H%M')}",
     }
     response = templates.TemplateResponse(request, "index.html", context)
-    # the UI evolves fast — never let a browser serve yesterday's cockpit
+    # the UI evolves fast â€” never let a browser serve yesterday's cockpit
     response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
@@ -763,7 +792,7 @@ async def post_wind_grid(body: WindGridRequest):
     for alt in sorted(set(body.altitudes_ft)):
         try:
             batch = await sample_winds_batch(pts, float(alt))
-        except Exception as exc:  # noqa: BLE001 — a dead grid level must not kill the ranking
+        except Exception as exc:  # noqa: BLE001 â€” a dead grid level must not kill the ranking
             log.info("batched wind sampling failed at %dft: %s", alt, exc)
             continue
         samples = [
@@ -845,7 +874,7 @@ class ReplayRequest(BaseModel):
 async def post_simulation_replay(body: ReplayRequest):
     """Ghost-flyer: integrate the route through TODAY'S forecast winds.
 
-    Point-mass kinematics only — position advances along each leg with the
+    Point-mass kinematics only â€” position advances along each leg with the
     wind triangle solved at every step from GFS samples interpolated along
     the route. No aircraft dynamics are pretended; this answers 'when/fuel/
     drift if I fly this plan through this sky', nothing more.
@@ -885,7 +914,7 @@ async def post_simulation_replay(body: ReplayRequest):
             acc += seg
     try:
         batch = await sample_winds_batch(samples, float(body.cruise_altitude_ft))
-    except Exception as exc:  # noqa: BLE001 — explicit degradation, never fake calm
+    except Exception as exc:  # noqa: BLE001 â€” explicit degradation, never fake calm
         raise BadRequest(
             f"winds unavailable for replay ({exc}); simulation needs Open-Meteo"
         ) from exc
@@ -1012,7 +1041,7 @@ async def post_weather_briefing(body: BriefRequest):
 
 @app.get("/api/sigmet/spain")
 async def get_sigmet_spain():
-    """Active SIGMETs for Spanish FIRs (Madrid/Barcelona/Canarias…) from NOAA AWC."""
+    """Active SIGMETs for Spanish FIRs (Madrid/Barcelona/Canariasâ€¦) from NOAA AWC."""
     import asyncio as _aio
 
     def _fetch() -> Any:
@@ -1027,7 +1056,7 @@ async def get_sigmet_spain():
 
     try:
         data = await _aio.to_thread(_fetch)
-    except Exception as exc:  # noqa: BLE001 — explicit degradation
+    except Exception as exc:  # noqa: BLE001 â€” explicit degradation
         return ok_payload({"sigmets": [], "note": f"SIGMET feed unavailable: {exc.__class__.__name__}"})
     items = []
     for s in data if isinstance(data, list) else []:
@@ -1047,6 +1076,153 @@ async def get_sigmet_spain():
         "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "note": "empty list means no active SIGMET over Spain right now",
     })
+
+
+@app.get("/api/aemet/diag")
+async def get_aemet_diag():
+    """Honest probe of AEMET OpenData: per-endpoint HTTP status + byte count.
+
+    AEMET's gateway has been observed returning 200 with EMPTY bodies for all
+    endpoints from some networks; this endpoint exists so the UI can show that
+    fact instead of a silent empty chart.
+    """
+    key = os.environ.get("AEMET_API_KEY", "")
+    if not key:
+        return ok_payload({"configured": False,
+                           "note": "set AEMET_API_KEY in .env.txt (free key at aemet.es/opendata)"})
+    probes: list[dict[str, Any]] = []
+    f = datetime.now(timezone.utc).date().isoformat()
+    targets = {
+        "sigwx_espana_d0": f"/opendata/api/mapasygraficos/mapassignificativos/fecha/{f}/espana/0",
+        "analisis": "/opendata/api/mapasygraficos/analisis",
+        "avisos_cap": "/opendata/api/avisos_cap/ultimoelaborado/area/espen",
+    }
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        for label, path in targets.items():
+            try:
+                r = await client.get(f"https://opendata.aemet.es{path}", params={"apikey": key})
+                probes.append({"probe": label, "status": r.status_code, "bytes": len(r.content)})
+            except httpx.HTTPError as exc:
+                probes.append({"probe": label, "error": exc.__class__.__name__})
+    alive = any(p.get("bytes", 0) > 0 for p in probes)
+    return ok_payload({
+        "configured": True, "probes": probes,
+        "gateway_serving_data": alive,
+        "note": ("AEMET responded normally" if alive
+                 else "AEMET gateway returned EMPTY bodies for every endpoint â€” "
+                      "their service is not delivering data to this network right now"),
+    })
+
+
+async def _aemet_json(path: str) -> dict[str, Any]:
+    """Call an AEMET OpenData endpoint; raise BadRequest with honest detail."""
+    key = os.environ.get("AEMET_API_KEY", "")
+    if not key:
+        raise BadRequest("AEMET_API_KEY is not configured (.env.txt)")
+    url = f"https://opendata.aemet.es/opendata/api{path}"
+    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        r = await client.get(url, params={"apikey": key})
+        if len(r.content) == 0:
+            raise BadRequest(
+                "AEMET returned an empty response (their gateway currently serves "
+                "no data on this route/network â€” see /api/aemet/diag)")
+        try:
+            body = r.json()
+        except ValueError as exc:
+            raise BadRequest(f"AEMET returned non-JSON ({r.status_code})") from exc
+        datos = body.get("datos")
+        if not datos:
+            raise BadRequest(
+                f"AEMET: {body.get('descripcion') or 'no data URL returned'} "
+                f"(estado {body.get('estado')})")
+        m = await client.get(datos)
+        if len(m.content) == 0:
+            raise BadRequest("AEMET data URL returned empty content")
+        return {"meta": body, "payload_text": m.text, "content_type": m.headers.get("content-type", "")}
+
+
+@app.get("/api/aemet/sigwx")
+async def get_aemet_sigwx(ambito: str = "espana", dia: int = 0):
+    """Significant-weather chart metadata+image for ambito/espana|peninsula|baleares|canarias."""
+    f = datetime.now(timezone.utc).date().isoformat()
+    res = await _aemet_json(f"/mapasygraficos/mapassignificativos/fecha/{f}/{ambito}/{max(0, min(2, dia))}")
+    # payload may be JSON list of images or a single image URL â€” normalise
+    text = res["payload_text"]
+    img_urls: list[str] = []
+    cap = ""
+    try:
+        parsed = json.loads(text)
+        items = parsed if isinstance(parsed, list) else [parsed]
+        for it in items:
+            u = it.get("url") or it.get("imagen") or ""
+            if u:
+                img_urls.append(u)
+            if not cap:
+                cap = it.get("titulo") or it.get("descripcion") or ""
+    except ValueError:
+        m = re.search(r'https?://[^\s"\']+\.(?:gif|png|jpe?g)', text)
+        if m:
+            img_urls.append(m.group(0))
+    if not img_urls:
+        # payload itself might be the image bytes
+        if res["content_type"].startswith("image/"):
+            import hashlib as _h
+            digest = _h.sha256(text.encode("utf-8", "ignore")).hexdigest()[:16]
+            cache = DATA_DIR / "cache" / "aemet"
+            cache.mkdir(parents=True, exist_ok=True)
+            fp = cache / f"sigwx_{digest}"
+            fp.write_bytes(text.encode("latin-1"))
+            return ok_payload({"images": [{"src": f"/api/aemet/image?f={fp.name}"}], "caption": "", "source": "AEMET OpenData"})
+        raise BadRequest("AEMET SIGWX payload had no image reference")
+    import hashlib as _h
+    out = []
+    cache = DATA_DIR / "cache" / "aemet"
+    cache.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        for u in img_urls[:4]:
+            r = await client.get(u)
+            ext = ".png" if "png" in r.headers.get("content-type", "") else ".gif"
+            name = f"sigwx_{_h.sha256(u.encode()).hexdigest()[:16]}{ext}"
+            (cache / name).write_bytes(r.content)
+            out.append({"src": f"/api/aemet/image?f={name}"})
+    return ok_payload({"images": out, "caption": str(cap), "source": "AEMET OpenData"})
+
+
+@app.get("/api/aemet/image")
+async def get_aemet_image(f: str):
+    """Serve cached AEMET image by filename only (no paths, no traversal)."""
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9_.-]+", f):
+        raise BadRequest("bad filename")
+    fp = DATA_DIR / "cache" / "aemet" / f
+    if not fp.is_file():
+        raise BadRequest("not cached")
+    ext = fp.suffix.lower()
+    media = "image/png" if ext == ".png" else "image/gif"
+    return Response(content=fp.read_bytes(), media_type=media)
+
+
+@app.get("/api/aemet/analisis")
+async def get_aemet_analisis():
+    """AEMET surface analysis chart (fronts, pressure) â€” same pipeline as SIGWX."""
+    res = await _aemet_json("/mapasygraficos/analisis")
+    text = res["payload_text"]
+    import hashlib as _h
+    cache = DATA_DIR / "cache" / "aemet"
+    cache.mkdir(parents=True, exist_ok=True)
+    if res["content_type"].startswith("image/"):
+        name = f"analisis_{_h.sha256(text.encode('utf-8', 'ignore')).hexdigest()[:16]}.png"
+        (cache / name).write_bytes(text.encode("latin-1"))
+        return ok_payload({"images": [{"src": f"/api/aemet/image?f={name}"}], "source": "AEMET OpenData"})
+    m = re.search(r'https?://[^\s"\']+\.(?:gif|png|jpe?g)', text)
+    if not m:
+        raise BadRequest("analysis payload had no image reference")
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        r = await client.get(m.group(0))
+        ext = ".png" if "png" in r.headers.get("content-type", "") else ".gif"
+        name = f"analisis_{_h.sha256(m.group(0).encode()).hexdigest()[:16]}{ext}"
+        (cache / name).write_bytes(r.content)
+    return ok_payload({"images": [{"src": f"/api/aemet/image?f={name}"}], "source": "AEMET OpenData"})
 
 
 @app.post("/api/weather/taf/timeline")
@@ -1085,7 +1261,7 @@ async def get_reporting_points(icao: str):
     try:
         snap = await app.state.enaire.get_ad2(icao)
         _index_reporting_points(snap, icao.upper())
-    except Exception as exc:  # noqa: BLE001 — points are an enhancement
+    except Exception as exc:  # noqa: BLE001 â€” points are an enhancement
         return ok_payload({"points": [], "note": f"AD2 unavailable: {exc}"})
     pts = [
         {"name": p.name, "latitude": p.latitude_deg, "longitude": p.longitude_deg}
@@ -1129,7 +1305,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aviation-richdale/1.0"
 
 @app.post("/api/traffic/nearby")
 async def post_traffic_nearby(body: TrafficRequest):
-    """Live ADS-B positions (OpenSky, anonymous). Advisory only — see MANUAL."""
+    """Live ADS-B positions (OpenSky, anonymous). Advisory only â€” see MANUAL."""
     import math as _m
     dlat = body.radius_nm / 60.0
     dlon = dlat / max(0.2, _m.cos(_m.radians(body.latitude)))
@@ -1143,7 +1319,7 @@ async def post_traffic_nearby(body: TrafficRequest):
         try:
             response = await client.get(OPENSKY_STATES_URL, params=params)
             if response.status_code == 429:
-                return ok_payload({"aircraft": [], "note": "Rate limited by OpenSky — retrying later."})
+                return ok_payload({"aircraft": [], "note": "Rate limited by OpenSky â€” retrying later."})
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -1183,7 +1359,7 @@ async def post_traffic_nearby(body: TrafficRequest):
     return ok_payload({
         "aircraft": aircraft,
         "count": len(aircraft),
-        "note": "ADS-B coverage only — aircraft without transponders or below coverage are INVISIBLE.",
+        "note": "ADS-B coverage only â€” aircraft without transponders or below coverage are INVISIBLE.",
     })
 
 
@@ -1246,7 +1422,7 @@ async def post_guardian(body: GuardianRequest):
                     "source": f"{rep.icao} METAR",
                 }
                 break
-    except Exception as exc:  # noqa: BLE001 — ring must work offline too
+    except Exception as exc:  # noqa: BLE001 â€” ring must work offline too
         log.info("guardian METAR unavailable: %s", exc)
 
     def range_nm(bearing_deg: float) -> float:
@@ -1326,7 +1502,7 @@ async def post_guardian(body: GuardianRequest):
             "agl_ft": round(agl_ft),
             "still_air_range_nm": round(still_range_nm, 1),
             "wind": wind,
-            "note": "" if wind else "No METAR within range — still-air envelope shown.",
+            "note": "" if wind else "No METAR within range â€” still-air envelope shown.",
         },
     })
 
@@ -1348,7 +1524,7 @@ async def post_ground_nearby(body: GroundRequest):
                 "speed_kt": reports[0].wind.speed_kt,
                 "gust_kt": reports[0].wind.gust_kt,
             }
-    except Exception as exc:  # noqa: BLE001 — wind is an enhancement here
+    except Exception as exc:  # noqa: BLE001 â€” wind is an enhancement here
         log.info("ground-view METAR failed for %s: %s", ident, exc)
 
     runways_out = []

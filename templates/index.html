@@ -736,6 +736,20 @@ tailwind.config = {
         <div id="briefChips" class="flex flex-wrap gap-1.5 mb-2"></div>
         <div id="briefBody" class="text-[11px] font-mono text-slate-200 leading-snug max-h-[240px] overflow-y-auto"></div>
       </div>
+      <div id="sigwxCard" class="glass mt-3 p-3 rounded-xl border border-violet-400/20">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">SIGWX charts · AEMET</span>
+          <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
+          <button data-a="espana" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">ESPAÑA D0</button>
+          <button data-a="espana" data-d="1" class="chip px-2 py-1 text-[10px] font-bold">D+1</button>
+          <button data-a="baleares" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">BALEARES</button>
+          <button data-a="canarias" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">CANARIAS</button>
+          <button data-a="__analisis" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">SURFACE ANALYSIS</button>
+        </div>
+        <div id="sigwxBody" class="text-[11px] font-mono text-slate-300"></div>
+      </div>
       <div id="sigmetCard" class="glass mt-3 p-3 rounded-xl border border-rose-400/20">
         <div class="flex items-center justify-between mb-1.5">
           <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">SIGMET · Spain (live)</span>
@@ -4755,6 +4769,64 @@ async function loadSpainSigmet() {
 
 $('briefRefresh')?.addEventListener('click', loadAirportBrief);
 $('sigmetRefresh')?.addEventListener('click', loadSpainSigmet);
+
+/* ---------------- AEMET SIGWX charts (key-gated, honest degradation) ------ */
+
+let sigwxBusy = false;
+
+async function sigwxGo(ambito, dia) {
+  if (sigwxBusy) return;
+  sigwxBusy = true;
+  const box = $('sigwxBody');
+  box.innerHTML = '<span class="text-slate-500">fetching chart…</span>';
+  try {
+    const res = ambito === '__analisis'
+      ? await api('/api/aemet/sigwx?ambito=__analisis')
+      : await api(`/api/aemet/sigwx?ambito=${encodeURIComponent(ambito)}&dia=${dia}`);
+    const imgs = (res.images || []);
+    box.innerHTML =
+      (res.caption ? `<div class="text-[10px] text-slate-400 mb-1">${res.caption}</div>` : '') +
+      imgs.map(i => `<img src="${i.src}" alt="AEMET SIGWX" class="w-full rounded-lg my-1 bg-white/5">`).join('') +
+      `<div class="text-[8px] text-slate-500 mt-1">source: ${res.source} · ${new Date().toLocaleTimeString()}Z</div>`;
+    $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
+  } catch (err) {
+    let msg = err.message || 'unknown error';
+    if (/empty response/i.test(msg)) msg += ' — their gateway is not delivering data on this network; press DIAGNOSE for proof.';
+    if (/not configured/i.test(msg)) msg += ' — add your free key as AEMET_API_KEY in .env.txt.';
+    box.innerHTML = `<span class="text-amber-300">${msg}</span>`;
+    $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
+  } finally { sigwxBusy = false; }
+}
+
+$('sigwxTabs')?.addEventListener('click', (ev) => {
+  const b = ev.target?.closest('button');
+  if (!b) return;
+  ev.stopPropagation();
+  $('sigwxTabs').querySelectorAll('button').forEach(x => x.style.background = '');
+  b.style.background = 'rgba(167,139,250,.3)';
+  if (b.dataset.a === '__analisis') {
+    sigwxBusy = true;
+    const box = $('sigwxBody');
+    api('/api/aemet/analisis').then(res => {
+      box.innerHTML = (res.images || []).map(i => `<img src="${i.src}" class="w-full rounded-lg my-1 bg-white/5">`).join('') +
+        `<div class="text-[8px] text-slate-500 mt-1">surface analysis · source: AEMET OpenData</div>`;
+    }).catch(e => { box.innerHTML = `<span class="text-amber-300">${e.message}</span>`; })
+      .finally(() => { sigwxBusy = false; });
+  } else {
+    sigwxGo(b.dataset.a, parseInt(b.dataset.d, 10) || 0);
+  }
+});
+
+$('sigwxDiag')?.addEventListener('click', async () => {
+  const box = $('sigwxBody');
+  try {
+    const d = await api('/api/aemet/diag');
+    if (!d.configured) { box.innerHTML = `<span class="text-amber-300">${d.note}</span>`; return; }
+    box.innerHTML = d.probes.map(p =>
+      `<div>${p.probe}: ${p.error ? p.error : `HTTP ${p.status}, ${p.bytes} bytes`}</div>`
+    ).join('') + `<div class="mt-1 ${d.gateway_serving_data ? 'text-emerald-300' : 'text-rose-300'}">${d.note}</div>`;
+  } catch (err) { box.innerHTML = `<span class="text-rose-300">diag failed: ${err.message}</span>`; }
+});
 
 async function loadTafTimelines(navlog) {
   const box = $('tafTimeline');

@@ -177,10 +177,14 @@ step · and what's **behind it** (data source, physics, honest limits).
   VFR/MVFR/IFR), TEMPO/PROB as thin sub-bars; long-press for decoded values.
 * **Cloud strip** — 12 h of low/mid/high cloud columns at the route midpoint.
 
-> AEMET's significant-weather **charts** moved behind their OpenData API
-> (free key). Set `AEMET_API_KEY` in the environment to enable chart fetches;
-> without it the app shows live AEMET SIGMET text via NOAA instead of
-> pretending to have the images.
+> **AEMET SIGWX charts** live behind their OpenData API. Put your free key
+> in `.env.txt` as `AEMET_API_KEY=…` (the file is git-ignored; values are
+> never logged). The **SIGWX · AEMET** card then offers España D0/D+1,
+> Baleares, Canarias and the surface-analysis chart. If their gateway serves
+> empty responses — which it demonstrably does on some networks even with a
+> valid key — press **DIAGNOSE** on the card: it prints per-endpoint HTTP
+> status and byte counts straight from `/api/aemet/diag`, so you see exactly
+> where it breaks instead of staring at a blank panel.
 
 ### 4.5 NOTAMS tab
 Automatic bounding-box fetch around the whole route, active items only
@@ -449,6 +453,7 @@ altitude feeding Night check, Guardian and FINAL callouts.
 | METAR/TAF/history | NOAA AWC JSON | none (fresh) | loud error; stale values labelled |
 | Raw METAR/TAF briefing | NOAA AWC `format=raw` feeds | none (fresh) | per-airport visible error |
 | Spain SIGMETs (AEMET-issued) | NOAA AWC SIGMET feed, FIR-filtered | none (fresh) | visible "feed unavailable" note |
+| AEMET SIGWX charts / analysis | AEMET OpenData API (`AEMET_API_KEY` in .env.txt) | disk, per-image | DIAGNOSE button shows per-endpoint HTTP+bytes |
 | Winds aloft | Open-Meteo GFS pressure grids | 20 min/cell | level skipped, ranking continues |
 | Cloud forecast | Open-Meteo hourly low/mid/high | — | hidden with message |
 | Terrain | AWS terrarium tiles (SRTM) | disk | profile skipped with note |
