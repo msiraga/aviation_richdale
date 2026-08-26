@@ -980,12 +980,24 @@ const map = new maplibregl.Map({
         maxzoom: 19,
         attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics'
       },
+      basemapTopo: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+          'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+          'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        maxzoom: 17,
+        attribution: '&copy; OpenStreetMap contributors, SRTM | style: &copy; OpenTopoMap (CC-BY-SA)'
+      },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': '#0d1a0d' } },
       { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.92 }, layout: { visibility: 'none' } },
       { id: 'basemap-light', type: 'raster', source: 'basemapLight', paint: { 'raster-opacity': 0.96 }, layout: { visibility: 'none' } },
-      { id: 'basemap-sat', type: 'raster', source: 'basemapSat', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'visible' } },
+      { id: 'basemap-sat', type: 'raster', source: 'basemapSat', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'none' } },
+      { id: 'basemap-topo', type: 'raster', source: 'basemapTopo', paint: { 'raster-opacity': 1.0 }, layout: { visibility: 'visible' } },
     ]
   }
 });
@@ -1189,7 +1201,9 @@ map.on('load', () => {
   if (BOOT.ofmTileUrl) {
     $('layerOfmToggle').classList.remove('hidden');
   } else {
-    showToast('OpenFlightMaps tile endpoint not provisioned (OPENFLIGHTMAPS_TILE_URL). OFM rotates infrastructure — supply the current XYZ template to activate their VFR chart layer.', 'info', 8000);
+    // OFM tile template not provisioned: hide the toggle silently instead of
+    // nagging on every boot. Supplying OPENFLIGHTMAPS_TILE_URL brings it back.
+    $('layerOfmToggle').classList.add('hidden');
   }
 
   setInterval(updateLinkStatus, 20000);
@@ -2304,11 +2318,12 @@ const GpsManager = (() => {
 $('gpsToggle').addEventListener('click', () => GpsManager.toggle());
 
 const BASEMAP_CYCLE = [
+  { label: 'TOPO', layer: 'basemap-topo', bg: '#e8e0d0' },
   { label: 'DARK', layer: 'basemap', bg: '#04070f' },
   { label: 'LIGHT', layer: 'basemap-light', bg: '#cfd8e3' },
   { label: 'SAT', layer: 'basemap-sat', bg: '#0d1a0d' },
 ];
-let basemapIdx = 2; // SAT is the default: most informative for visual orientation
+let basemapIdx = 0; // TOPO default: roads + railways + relief = VFR ground reference
 $('basemapToggle').textContent = BASEMAP_CYCLE[basemapIdx].label;
 $('basemapToggle').addEventListener('click', () => {
   const prev = BASEMAP_CYCLE[basemapIdx];

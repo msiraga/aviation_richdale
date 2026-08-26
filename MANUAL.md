@@ -392,7 +392,7 @@ integrity channel — PAPI semantics you already know how to read, nothing more.
 
 | Chip | Layer | When to use | Notes |
 |---|---|---|---|
-| DARK / LIGHT / SAT | Base styles + Esri satellite | Always on | Tap the **MAP** label to cycle too |
+| TOPO / DARK / LIGHT / SAT | OpenTopoMap (roads, railways, relief), CARTO dark/light, Esri satellite | Always on | Tap the **MAP** label to cycle too. TOPO is the default — it doubles as a VFR ground-reference chart |
 | CHART | ENAIRE Insignia VFR chart | Navigation truth | ~2–3 s/tile first load; label reads CHART… until ready |
 | VOR/DME | Navaids + METAR-coloured airports | Navigation | Legend colours bottom-centre |
 | RAIN | RainViewer radar | Weather avoidance | 5-min refresh |
@@ -515,6 +515,6 @@ telemetry, no accounts.
 
 ENAIRE (charts, AIP, NOTAMs) · OurAirports (David Megginson, public domain) ·
 NOAA AWC (METAR/TAF) · Open-Meteo (GFS winds/clouds) · AWS Terrain Tiles
-(SRTM) · RainViewer · Esri World Imagery · OpenSky Network (ADS-B) ·
+(SRTM) · RainViewer · Esri World Imagery · OpenTopoMap · OpenSky Network (ADS-B) ·
 MapLibre GL · Three.js. Full attributions in `NOTICE.md`.
 Licensed per repository root.
