@@ -742,10 +742,18 @@ tailwind.config = {
           <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
         </div>
         <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
-          <button data-a="espana" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">ESPAÑA D0</button>
-          <button data-a="espana" data-d="1" class="chip px-2 py-1 text-[10px] font-bold">D+1</button>
-          <button data-a="baleares" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">BALEARES</button>
-          <button data-a="canarias" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">CANARIAS</button>
+          <button data-a="esp" data-d="c" class="chip px-2 py-1 text-[10px] font-bold">SIGWX D+1 AM</button>
+          <button data-a="esp" data-d="d" class="chip px-2 py-1 text-[10px] font-bold">D+1 PM</button>
+          <button data-a="esp" data-d="e" class="chip px-2 py-1 text-[10px] font-bold">D+2 AM</button>
+          <button data-a="esp" data-d="f" class="chip px-2 py-1 text-[10px] font-bold">D+2 PM</button>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mb-2">
+          <span class="text-[9px] uppercase tracking-widest text-slate-500 self-center mr-1">Forecast maps</span>
+          <button data-a="__previstos" data-d="h24" class="chip px-2 py-1 text-[10px] font-bold">H+24</button>
+          <button data-a="__previstos" data-d="h36" class="chip px-2 py-1 text-[10px] font-bold">H+36</button>
+          <button data-a="__previstos" data-d="h48" class="chip px-2 py-1 text-[10px] font-bold">H+48</button>
+          <button data-a="__previstos" data-d="h60" class="chip px-2 py-1 text-[10px] font-bold">H+60</button>
+          <button data-a="__previstos" data-d="h72" class="chip px-2 py-1 text-[10px] font-bold">H+72</button>
           <button data-a="__analisis" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">SURFACE ANALYSIS</button>
         </div>
         <div id="sigwxBody" class="text-[11px] font-mono text-slate-300"></div>
@@ -4777,7 +4785,7 @@ let sigwxBusy = false;
 
 async function aemetFetchJson(path) {
   if (!BOOT.aemetApiKey) throw new Error('AEMET_API_KEY not configured (.env.txt)');
-  const r = await fetch(`https://opendata.aemet.es/opendata/api${path}?apikey=${encodeURIComponent(BOOT.aemetApiKey)}`);
+  const r = await fetch(`https://opendata.aemet.es/opendata/api${path}?api_key=${encodeURIComponent(BOOT.aemetApiKey)}`);
   const body = await r.json().catch(() => { throw new Error('AEMET returned non-JSON'); });
   if (!body.datos) throw new Error(body.descripcion || `AEMET estado ${body.estado}: no data URL`);
   return body;
@@ -4788,13 +4796,15 @@ async function sigwxGo(ambito, dia) {
   sigwxBusy = true;
   const box = $('sigwxBody');
   const label = ambito === '__analisis' ? 'surface analysis'
-    : `${ambito.toUpperCase()} D${dia}`;
+    : ambito === '__previstos' ? `forecast ${dia.toUpperCase()}`
+    : `SIGWX España ${dia}`;
   box.innerHTML = `<span class="text-slate-500">fetching ${label} chart via your browser…</span>`;
   $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
   try {
-    const path = ambito === '__analisis'
-      ? '/mapasygraficos/analisis'
-      : `/mapasygraficos/mapassignificativos/fecha/${new Date().toISOString().slice(0, 10)}/${ambito}/${dia}`;
+    let path;
+    if (ambito === '__analisis') path = '/mapasygraficos/analisis';
+    else if (ambito === '__previstos') path = `/mapasygraficos/previstos/${dia}`;
+    else path = `/mapasygraficos/mapassignificativos/fecha/${new Date().toISOString().slice(0, 10)}/${ambito}/${dia}`;
     const meta = await aemetFetchJson(path);
     // datos may be an image itself, or JSON listing images
     const head = await fetch(meta.datos);
@@ -4831,13 +4841,13 @@ async function sigwxGo(ambito, dia) {
   } finally { sigwxBusy = false; }
 }
 
-$('sigwxTabs')?.addEventListener('click', (ev) => {
-  const b = ev.target?.closest('button');
-  if (!b) return;
+$('sigwxCard')?.addEventListener('click', (ev) => {
+  const b = ev.target?.closest('button[data-a]');
+  if (!b || b.id === 'sigwxDiag') return;
   ev.stopPropagation();
-  $('sigwxTabs').querySelectorAll('button').forEach(x => x.style.background = '');
+  $('sigwxCard').querySelectorAll('button[data-a]').forEach(x => x.style.background = '');
   b.style.background = 'rgba(167,139,250,.3)';
-  sigwxGo(b.dataset.a, parseInt(b.dataset.d, 10) || 0);
+  sigwxGo(b.dataset.a, b.dataset.d || '0');
 });
 
 $('sigwxDiag')?.addEventListener('click', async () => {

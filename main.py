@@ -1101,7 +1101,7 @@ async def get_aemet_diag():
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         for label, path in targets.items():
             try:
-                r = await client.get(f"https://opendata.aemet.es{path}", params={"apikey": key})
+                r = await client.get(f"https://opendata.aemet.es{path}", params={"api_key": key})
                 probes.append({"probe": label, "status": r.status_code, "bytes": len(r.content)})
             except httpx.HTTPError as exc:
                 probes.append({"probe": label, "error": exc.__class__.__name__})
@@ -1122,7 +1122,7 @@ async def _aemet_json(path: str) -> dict[str, Any]:
         raise BadRequest("AEMET_API_KEY is not configured (.env.txt)")
     url = f"https://opendata.aemet.es/opendata/api{path}"
     async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
-        r = await client.get(url, params={"apikey": key})
+        r = await client.get(url, params={"api_key": key})
         if len(r.content) == 0:
             raise BadRequest(
                 "AEMET returned an empty response (their gateway currently serves "
