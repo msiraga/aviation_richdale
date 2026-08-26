@@ -290,7 +290,15 @@ async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return error_response(500, "internal_error", "unexpected server fault; see server logs")
 
 
-async def resolve_waypoints(entries: Sequence[str], engine: AviationWeatherEngine) -> list[tuple[LatLon, str]]:
+async def resolve_waypoints(
+    entries: Sequence[str],
+    engine: AviationWeatherEngine,
+    air_reference: Any = None,
+    enaire_service: Any = None,
+) -> list[tuple[LatLon, str]]:
+    """Resolve route entries: 'lat,lon', airport ICAO, navaid ident
+    (optionally typed: 'VOR:VLC', 'NDB:SKA'), or ENAIRE reporting points
+    ('RP:FOIOS' from already-indexed charts, 'LEVC:FOIOS' to load one)."""
     resolved: list[tuple[LatLon, str]] = []
     seen_labels: set[str] = set()
     for entry in entries:
@@ -311,14 +319,121 @@ async def resolve_waypoints(entries: Sequence[str], engine: AviationWeatherEngin
             resolved.append((LatLon(latitude=lat, longitude=lon), f"{lat:.4f},{lon:.4f}"))
             continue
 
-        station = await engine.resolve_station(key)
-        resolved.append(
-            (LatLon(latitude=station.latitude, longitude=station.longitude), station.icao)
+        # ---- prefixed forms -------------------------------------------------
+        if ":" in key and not coord_match:
+            prefix, _, rest = key.partition(":")
+            rest = rest.strip()
+            if not rest:
+                raise BadRequest(f"empty value after ':' in: {label}")
+            if prefix in {"VOR", "NDB", "DME", "TACAN", "VORDME"}:
+                if air_reference is None:
+                    raise BadRequest("navaid lookup unavailable (dataset not loaded)")
+                hit = await air_reference.navaid_by_ident(rest, "VOR" if prefix == "VORDME" else prefix)
+                if hit is None:
+                    raise BadRequest(
+                        f"no {prefix} navaid with ident '{rest}' in OurAirports dataset"
+                    )
+                note = f" ({hit['candidates']} worldwide share this ident; ES preferred)" if hit["candidates"] > 1 else ""
+                log.info("navaid waypoint %s -> %s%s", label, hit["ident"], note)
+                resolved.append((LatLon(latitude=hit["latitude"], longitude=hit["longitude"]),
+                                 f"{hit['ident']} {hit['type']}"))
+                continue
+            if prefix == "RP":
+                hit = _rp_lookup(rest)
+                if hit is None:
+                    raise BadRequest(
+                        f"reporting point '{rest}' is not indexed yet — open that airport's "
+                        "VAC once, or use the ICAO:NAME form (e.g. LEVC:FOIOS)"
+                    )
+                resolved.append((LatLon(latitude=hit["latitude"], longitude=hit["longitude"]),
+                                 f"RP {rest}"))
+                continue
+            if len(prefix) == 4:  # ICAO:NAME — load this field's chart on demand
+                try:
+                    snap = await enaire_service.get_ad2(prefix)
+                except Exception as exc:  # noqa: BLE001 - explicit degradation
+                    raise BadRequest(f"could not load AD-2 for {prefix}: {exc}") from exc
+                _index_reporting_points(snap, prefix)
+                target = rest.upper()
+                for p in getattr(snap, "reporting_points", []) or []:
+                    pname = str(getattr(p, "name", "")).strip().upper()
+                    pbase = pname.split("(", 1)[0].strip()
+                    if pname == target or (pbase and pbase == target):
+                        resolved.append((LatLon(latitude=p.latitude_deg, longitude=p.longitude_deg),
+                                         f"RP {target}"))
+                        break
+                else:
+                    known = ", ".join(sorted(str(getattr(p, "name", "")) for p in snap.reporting_points)[:8]) or "none parsed"
+                    raise BadRequest(f"'{rest}' not among {prefix} reporting points ({known})")
+                continue
+            raise BadRequest(
+                f"unknown prefix '{prefix}:' — use VOR:, NDB:, DME:, RP: or ICAO:NAME"
+            )
+
+        # ---- bare idents: local airports first, then NOAA station, then navaid
+        airport = None
+        if air_reference is not None:
+            airport = await air_reference.airport_by_ident(key)
+        if airport is not None:
+            resolved.append((LatLon(latitude=airport["latitude"], longitude=airport["longitude"]),
+                             airport["ident"]))
+            continue
+        try:
+            station = await engine.resolve_station(key)
+        except (UnknownStation, WeatherServiceError):
+            # no live METAR station by that ident — fall through to navaids
+            station = None
+        if station is not None:
+            resolved.append(
+                (LatLon(latitude=station.latitude, longitude=station.longitude), station.icao)
+            )
+            continue
+        if air_reference is not None:
+            hit = await air_reference.navaid_by_ident(key)
+            if hit is not None:
+                resolved.append((LatLon(latitude=hit["latitude"], longitude=hit["longitude"]),
+                                 f"{hit['ident']} {hit['type']}"))
+                continue
+        raise BadRequest(
+            f"unresolved waypoint '{label}' — use an airport ICAO, navaid ident "
+            "(VOR:/NDB:), RP:NAME / ICAO:NAME, or 'lat,lon'"
         )
 
     if len(resolved) < 2:
-        raise BadRequest("a route needs at least two distinct points (ICAO or 'lat,lon')")
+        raise BadRequest("a route needs at least two distinct points")
     return resolved
+
+
+# Reporting points seen so far this process: NAME -> {icao, latitude, longitude}
+# Populated opportunistically whenever an AD-2 snapshot is loaded — never by
+# mass-downloading charts. Honest gap: RP:NAME fails until a chart is opened
+# or the ICAO:NAME form loads it explicitly.
+_reporting_point_index: dict[str, dict[str, Any]] = {}
+
+
+def _index_reporting_points(snapshot: Any, icao: str) -> None:
+    for p in getattr(snapshot, "reporting_points", []) or []:
+        name = str(getattr(p, "name", "")).strip()
+        if not name:
+            continue
+        entry = {"icao": icao, "latitude": p.latitude_deg, "longitude": p.longitude_deg}
+        # index the printed name AND its base form ("N-1 (FOIOS)" -> also "N-1")
+        aliases = {name.upper()}
+        base = name.split("(", 1)[0].strip().upper()
+        if base:
+            aliases.add(base)
+        for alias in aliases:
+            _reporting_point_index.setdefault(alias, entry)
+
+
+def _rp_lookup(name: str) -> dict[str, Any] | None:
+    """Reporting-point lookup tolerant of the '(place)' suffix."""
+    key = name.strip().upper()
+    hit = _reporting_point_index.get(key)
+    if hit is None:
+        base = key.split("(", 1)[0].strip()
+        hit = _reporting_point_index.get(base)
+    return hit
 
 
 async def get_variation(engine_state: Any, lat: float, lon: float, alt_ft: float) -> tuple[float, bool]:
@@ -418,7 +533,11 @@ async def post_navlog(body: NavLogRequest):
     winds_engine: WindsAloftEngine = app.state.winds
 
     entries = [body.departure, *body.waypoints, body.arrival]
-    points = await resolve_waypoints(entries, engine)
+    points = await resolve_waypoints(
+        entries, engine,
+        air_reference=getattr(app.state, "airref", None),
+        enaire_service=app.state.enaire,
+    )
     fuel_rate_gph = body.fuel_rate / 3.785411784 if body.fuel_unit == "LPH" else body.fuel_rate
 
     start_time = (body.departure_time_utc or datetime.now(timezone.utc))
@@ -748,6 +867,7 @@ async def get_reporting_points(icao: str):
     """VFR entry/exit reporting points parsed from the ENAIRE AD-2/VAC chart."""
     try:
         snap = await app.state.enaire.get_ad2(icao)
+        _index_reporting_points(snap, icao.upper())
     except Exception as exc:  # noqa: BLE001 — points are an enhancement
         return ok_payload({"points": [], "note": f"AD2 unavailable: {exc}"})
     pts = [
@@ -1068,6 +1188,7 @@ async def post_terrain_profile(body: TerrainProfileRequest):
 @app.get("/api/aip/ad2/{icao}")
 async def get_aip_ad2(icao: str, force_refresh: bool = False):
     snapshot = await app.state.enaire.get_ad2(icao, force_refresh=force_refresh)
+    _index_reporting_points(snapshot, icao.upper())
     return ok_payload({"ad2": snapshot})
 
 

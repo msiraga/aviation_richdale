@@ -82,6 +82,8 @@ step · and what's **behind it** (data source, physics, honest limits).
 | I want to… | Where | When |
 |---|---|---|
 | Plan a route | **PLAN** sidebar | Pre-flight |
+| Waypoints: VOR · NDB · reporting points | PLAN — `VLC` · `NDB:AA` · `RP:N-1` / `LEVC:N-1` | Pre-flight |
+| Adjust route by dragging on the map | **✎ Edit trip on map** | Pre-flight |
 | Pick best cruise altitude | WEATHER tab → wind advisor | Pre-flight |
 | See weather at my ETA | WEATHER tab → Fly-the-Future slider | Pre-flight |
 | Know when sun blinds each leg | BRIEF tab → ☀ Glare Compass | Pre-flight |
@@ -113,11 +115,26 @@ step · and what's **behind it** (data source, physics, honest limits).
 ### 4.1 Route composer
 * **Where:** **PLAN** chip, left sidebar.
 * **When:** before every flight.
-* **How:** one waypoint per line — ICAO (`LEVC`), navaid ident (`VLC`) or free
-  coordinates (`38.87,-1.37`). Set cruise altitude, TAS, fuel burn → compute.
-  Legs appear on map and in LOG; FPL/GPX export lives at the bottom of BRIEF.
+* **How:** build the route from **any mix** of these entry forms — departure
+  and arrival fields accept the same grammar as en-route waypoints:
+
+| You type | It resolves as |
+|---|---|
+| `LEVC` | airport ICAO (local OurAirports lookup — works offline) |
+| `VLC` | navaid ident if no station matches (VOR/DME/NDB) |
+| `VOR:VLC` | forces the VOR even when an ident collides |
+| `NDB:AA` | forces the NDB type explicitly |
+| `RP:N-1` | ENAIRE reporting point already indexed this session |
+| `LEVC:N-1` | loads that field's VAC chart on demand and uses its point |
+| `38.87,-1.37` | raw coordinates |
+
+  Set cruise altitude, TAS, fuel burn → compute. Legs appear on map and in
+  LOG; FPL/GPX export lives at the bottom of BRIEF.
 * **Behind it:** great-circle legs and courses with WMM2020 magnetic variation
-  (validated against NOAA's official 100-vector test set).
+  (validated against NOAA's official 100-vector test set). Navaid idents are
+  matched exactly against the worldwide OurAirports dataset with Spanish
+  stations preferred on collisions — the server logs disclose how many
+  stations share a given ident.
 
 ### 4.2 Altitude advisor (winds-aloft ranking)
 * **Where:** WEATHER tab, first card.
@@ -161,6 +178,19 @@ from the real wind grid sample, not book averages.
 ### 4.7 FILE FPL / EXPORT GPX
 Bottom of BRIEF: copies an ICAO-format plan to the clipboard, and downloads
 your recorded track as GPX after a flight.
+
+### 4.8 Editing the trip on the map
+* **Where:** **✎ Edit trip on map** button under the composer.
+* **When:** adjusting an existing route visually instead of retyping entries.
+* **How:** compute once first. Toggle the button:
+  * numbered cyan handles appear at every waypoint (amber = departure/arrival);
+  * **drag** any handle → that point moves, the plan recomputes automatically;
+  * **click a mid-route handle** → removes it (departure/arrival stay fixed);
+  * **click anywhere within 30 NM of the route** → inserts a new waypoint at
+    that spot, spliced into the nearest leg.
+  Every change reuses the full compute pipeline (winds, terrain, NOTAMs), so
+  the nav log, corridor view and banners stay truthful. Toggle off to return
+  the map to normal interaction.
 
 ---
 

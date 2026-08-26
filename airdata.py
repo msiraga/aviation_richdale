@@ -322,6 +322,40 @@ class AirReferenceService:
             if south <= r.latitude_deg <= north and west <= r.longitude_deg <= east
         ]
 
+    async def airport_by_ident(self, ident: str) -> dict[str, Any] | None:
+        """Local OurAirports lookup so airport waypoints never need NOAA."""
+        async with self._lock:
+            records = await _load_airports(self.cache_dir)
+        key = ident.strip().upper()
+        for r in records:
+            if r.ident.upper() == key:
+                d = r.to_dict()
+                d["candidates"] = 1
+                return d
+        return None
+
+    async def navaid_by_ident(
+        self, ident: str, kind_prefix: str | None = None
+    ) -> dict[str, Any] | None:
+        """Exact-ident navaid lookup (VOR/NDB/DME...).
+
+        Spanish stations win ties deterministically; the returned dict carries
+        ``candidates`` so callers can disclose ambiguity instead of hiding it.
+        """
+        async with self._lock:
+            records = await _load_navaids(self.cache_dir)
+        key = ident.strip().upper()
+        matches = [r.to_dict() for r in records if r.ident.strip().upper() == key]
+        if kind_prefix:
+            prefix = kind_prefix.strip().upper()
+            matches = [r for r in matches if str(r.get("type", "")).upper().startswith(prefix)]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: (str(r.get("country", "")) != "ES", str(r.get("name", ""))))
+        best = dict(matches[0])
+        best["candidates"] = len(matches)
+        return best
+
 
 # --------------------------- ENAIRE VFR tile proxy ---------------------------
 

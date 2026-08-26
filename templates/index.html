@@ -219,6 +219,10 @@ tailwind.config = {
     pointer-events: none; z-index: 2; }
   .scroll-hint.left { left: 4px; } .scroll-hint.right { right: 4px; }
   .scroll-hint.show { opacity: .95; }
+  .trip-handle { width: 26px; height: 26px; border-radius: 8px; background: #22d3ee; color: #04121a;
+    font: bold 13px/26px system-ui; text-align: center; cursor: grab;
+    box-shadow: 0 0 10px rgba(34,211,238,.7); border: 2px solid #e0faff; }
+  .trip-end { background: #f59e0b; color: #241300; box-shadow: 0 0 10px rgba(245,158,11,.7); border-color: #fff3d6; }
   #helpSheet dl div { border-top: 1px solid rgba(255,255,255,.06); }
   /* ground (taxi) view card — bottom-left so it never stacks on Guardian */
   #groundPanel { position: absolute; left: 12px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
@@ -610,11 +614,12 @@ tailwind.config = {
       <div>
         <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">En-route waypoints</span>
         <div class="flex gap-2">
-          <input id="wptInput" maxlength="64" placeholder="+ add ICAO or lat,lon"
+          <input id="wptInput" maxlength="64" placeholder="+ VLC · NDB:SKA · RP:FOIOS · LEVC:FOIOS · 38.87,-1.37"
                  class="glass-input w-full px-3 py-2 font-mono text-xs text-cyan-50 placeholder-slate-600">
           <button type="button" id="wptAdd" class="chip px-3 text-lg leading-none text-cyan-200 hover:bg-cyan-400/20 transition">+</button>
         </div>
         <div id="wptChips" class="mt-2 flex flex-wrap gap-1.5 empty:mt-0"></div>
+        <div class="mt-1 text-[9px] text-slate-500 leading-snug">Airport ICAO · VOR/DME ident (VLC) · forced type <b>NDB:SKA</b> · ENAIRE reporting point <b>RP:FOIOS</b> or <b>LEVC:FOIOS</b> · raw <b>lat,lon</b></div>
       </div>
 
       <div>
@@ -652,6 +657,10 @@ tailwind.config = {
                class="glass-input w-full px-3 py-2 font-mono text-sm text-amber-100 placeholder-slate-600">
       </label>
 
+      <button id="editTripBtn" type="button"
+              class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-cyan-200">
+        ✎ Edit trip on map
+      </button>
       <button id="submitBtn" type="submit"
               class="btn-primary w-full rounded-xl py-3 text-sm uppercase tracking-[0.18em] mt-1">
         Compute flight plan
@@ -1227,6 +1236,110 @@ function addWaypointFromInput() {
 $('wptAdd').addEventListener('click', addWaypointFromInput);
 $('wptInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addWaypointFromInput(); } });
 
+/* --------------------- edit the trip directly on the map ------------------- */
+
+const tripEdit = { on: false, markers: [], clickHandler: null, recomputeTimer: null };
+
+function tripEntriesNow() {
+  return [$('depInput').value.trim(), ...waypointList, $('arrInput').value.trim()].filter(Boolean);
+}
+
+function tripPointsFromNavlog() {
+  if (!lastNavlog || !lastNavlog.legs || !lastNavlog.legs.length) return [];
+  const pts = lastNavlog.legs.map(leg => leg.geometry[0].slice());
+  pts.push(lastNavlog.legs[lastNavlog.legs.length - 1].geometry[lastNavlog.legs[lastNavlog.legs.length - 1].geometry.length - 1].slice());
+  return pts;
+}
+
+function scheduleTripRecompute() {
+  clearTimeout(tripEdit.recomputeTimer);
+  tripEdit.recomputeTimer = setTimeout(() => $('routeForm').requestSubmit(), 700);
+}
+
+function clearEditMarkers() {
+  tripEdit.markers.forEach(m => m.remove());
+  tripEdit.markers = [];
+  if (tripEdit.clickHandler) { map.off('click', tripEdit.clickHandler); tripEdit.clickHandler = null; }
+}
+
+function setWaypointEntry(idx, str) {
+  const n = tripEntriesNow().length;
+  if (idx <= 0) $('depInput').value = str;
+  else if (idx >= n - 1) $('arrInput').value = str;
+  else waypointList[idx - 1] = str;
+}
+
+function refreshEditMarkers() {
+  if (!tripEdit.on) return;
+  clearEditMarkers();
+  const pts = tripPointsFromNavlog();
+  if (pts.length < 2) return;
+  const n = pts.length;
+  pts.forEach(([lat, lon], idx) => {
+    const isEnd = idx === 0 || idx === n - 1;
+    const el = document.createElement('div');
+    el.className = 'trip-handle' + (isEnd ? ' trip-end' : '');
+    el.textContent = String(idx + 1);
+    el.title = isEnd ? 'drag to move · fixed endpoint' : 'drag to move · click to remove';
+    const marker = new maplibregl.Marker({ element: el, draggable: true })
+      .setLngLat([lon, lat]).addTo(map);
+    marker.on('dragend', () => {
+      const ll = marker.getLngLat();
+      setWaypointEntry(idx, `${ll.lat.toFixed(4)},${ll.lng.toFixed(4)}`);
+      showToast(`Waypoint ${idx + 1} moved — recomputing…`, 'info', 2500);
+      scheduleTripRecompute();
+    });
+    if (!isEnd) {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (waypointList.length === 0) return;   // keep at least dep→arr
+        waypointList.splice(idx - 1, 1);
+        showToast(`Waypoint ${idx + 1} removed — recomputing…`, 'info', 2500);
+        scheduleTripRecompute();
+      });
+    }
+    tripEdit.markers.push(marker);
+  });
+
+  // click empty map → insert a waypoint onto the nearest leg
+  tripEdit.clickHandler = (e) => {
+    const legsPts = tripPointsFromNavlog();
+    if (legsPts.length < 2) return;
+    const clat = e.lngLat.lat, clon = e.lngLat.lng;
+    let bestSeg = -1, bestDist = Infinity;
+    for (let s = 0; s < legsPts.length - 1; s++) {
+      const [aLat, aLon] = legsPts[s], [bLat, bLon] = legsPts[s + 1];
+      const mLat = (aLat + bLat) / 2, k = Math.cos(mLat * Math.PI / 180);
+      const ax = aLon * k, ay = aLat, bx = bLon * k, by = bLat;
+      const px = clon * k, py = clat;
+      const abx = bx - ax, aby = by - ay;
+      const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby || 1)));
+      const d = Math.hypot(px - (ax + abx * t), py - (ay + aby * t)) * 60;
+      if (d < bestDist) { bestDist = d; bestSeg = s; }
+    }
+    if (bestDist > 30) { showToast('Click within 30 NM of your route to insert a waypoint.', 'warn', 3000); return; }
+    // ignore clicks that just duplicate an existing point
+    for (const p of legsPts) if (Math.hypot((p[1] - clon) * Math.cos(clat * Math.PI / 180), p[0] - clat) * 60 < 0.5) return;
+    waypointList.splice(bestSeg, 0, `${clat.toFixed(4)},${clon.toFixed(4)}`);
+    showToast(`Waypoint inserted after leg ${bestSeg + 1} — recomputing…`, 'info', 2500);
+    scheduleTripRecompute();
+  };
+  map.on('click', tripEdit.clickHandler);
+}
+
+$('editTripBtn')?.addEventListener('click', () => {
+  tripEdit.on = !tripEdit.on;
+  $('editTripBtn').style.background = tripEdit.on ? 'rgba(34,211,238,0.25)' : '';
+  $('editTripBtn').textContent = tripEdit.on ? '✎ Editing map — click map to add' : '✎ Edit trip on map';
+  if (tripEdit.on) {
+    if (!lastNavlog) { showToast('Compute a route first, then edit it here.', 'warn'); tripEdit.on = false; return; }
+    refreshEditMarkers();
+    showToast('Drag numbered handles to move · click a mid-route handle to remove · click elsewhere near the route to insert.', 'info', 7000);
+  } else {
+    clearEditMarkers();
+  }
+});
+
 const altSlider = $('altSlider');
 altSlider.addEventListener('input', () => {
   const v = parseInt(altSlider.value, 10);
@@ -1270,6 +1383,7 @@ form.addEventListener('submit', async (ev) => {
     loadReportingPoints(result);
     loadNotams(result);
     await loadTerrainFor(result);
+    refreshEditMarkers();
   } catch (err) {
     showToast(`Flight plan failed: ${err.message}`, 'error');
   } finally {
