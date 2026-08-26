@@ -664,6 +664,11 @@ tailwind.config = {
               class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-cyan-200">
         ✎ Edit trip on map
       </button>
+      <select id="simScenario" class="glass-input w-full rounded-xl py-2 px-3 font-mono text-xs text-violet-100 mt-2">
+        <option value="plain">Scenario: plain replay (no events)</option>
+        <option value="engine-mid">Scenario: engine failure mid-route</option>
+        <option value="engine-late">Scenario: engine failure late</option>
+      </select>
       <button id="simReplayBtn" type="button"
               class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-violet-200">
         ▶ Simulate flight (today's winds)
@@ -1336,7 +1341,14 @@ function refreshEditMarkers() {
 
 /* ---------------- ghost-flyer: replay the plan through today's winds ------ */
 
-const simRun = { active: false, raf: 0 };
+const simRun = { active: false, raf: 0, ctx: null };
+
+/* Tier B scenario trainer — deterministic injects, real Guardian as judge */
+const SIM_SCENARIOS = {
+  'plain': [],
+  'engine-mid': [{ at_frac: 0.5, type: 'engine_failure' }],
+  'engine-late': [{ at_frac: 0.72, type: 'engine_failure' }],
+};
 
 function simChipHtml() {
   if (!$('simChip')) {
@@ -1361,11 +1373,105 @@ function fmtMMSS(s) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function ensureDecisionCard() {
+  if ($('decCard')) return $('decCard');
+  const div = document.createElement('div');
+  div.id = 'decCard';
+  div.className = 'hidden fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[54] glass p-4 w-[min(94vw,440px)] max-h-[86vh] overflow-y-auto';
+  div.innerHTML = [
+    '<div class="flex items-center justify-between mb-1">',
+    '  <span class="text-[10px] font-extrabold tracking-[0.22em] text-rose-300" id="decTitle">SCENARIO EVENT</span>',
+    '  <span class="font-mono text-[10px] text-slate-400" id="decT"></span>',
+    '</div>',
+    '<div class="text-[11px] text-slate-200 leading-snug mb-2" id="decBody"></div>',
+    '<div id="decOptions" class="space-y-1 my-2"></div>',
+    '<div class="text-[10px] font-bold tracking-widest text-slate-300 mt-3 mb-1">WHAT DO YOU DO?</div>',
+    '<div class="grid grid-cols-1 gap-1.5">',
+    '  <button data-choice="best" class="chip py-2 text-[11px] font-bold text-emerald-200">Commit to best option — turn now</button>',
+    '  <button data-choice="continue" class="chip py-2 text-[11px] font-bold text-amber-200">Continue toward destination</button>',
+    '  <button data-choice="custom" class="chip py-2 text-[11px] font-bold text-cyan-200">My own call (log without verdict)</button>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(div);
+  return div;
+}
+
+function verdictFor(choice, options) {
+  if (choice === 'custom') return { ok: null, why: 'own call — no verdict' };
+  const reachable = (options || []).some(o => o.margin_nm >= 0);
+  if (choice === 'best') {
+    if (!options || !options.length) return { ok: true, why: 'nothing listed; deciding fast is the skill' };
+    return { ok: reachable ? true : null, why: reachable ? 'matched recommended option' : 'no runway reachable — committing was still right' };
+  }
+  return { ok: false, why: reachable ? 'a reachable runway was available' : 'nothing reachable — continuing was forced' };
+}
+
+async function fireEngineFailure(ctx, simT, lat, lon) {
+  simRun.active = false;
+  cancelAnimationFrame(simRun.raf);
+  ctx.lastSimT = simT;
+  ctx.paused = true;
+  let g = null;
+  try {
+    g = await api('/api/emergency/guardian', {
+      method: 'POST',
+      body: {
+        latitude: lat, longitude: lon,
+        altitude_ft: parseInt($('altSlider').value, 10) || ctx.res.totals.cruise_altitude_ft || 6500,
+      },
+    });
+  } catch { /* card still shows with honest empty state */ }
+  const opts = (g && g.options) || [];
+  const card = ensureDecisionCard();
+  $('decTitle').textContent = 'SCENARIO · ENGINE FAILURE';
+  $('decT').textContent = `T+${fmtMMSS(simT)}`;
+  $('decBody').innerHTML =
+    `Throttle dead at <b>${lat.toFixed(3)}, ${lon.toFixed(3)}</b>, cruise ${parseInt($('altSlider').value, 10)} ft.` +
+    (g && g.assumptions && g.assumptions.wind
+      ? ` Aloft wind proxy ${Math.round(g.assumptions.wind.speed_kt)} kt from ${Math.round(g.assumptions.wind.from_deg)}°.`
+      : ' No wind report available.') +
+    ` Glide ratio ${(ctx.glideRatio || 9)}:1 · best glide ${ctx.bestGlideKt} kt.`;
+  $('decOptions').innerHTML = opts.length
+    ? opts.slice(0, 3).map(o =>
+        `<div class="rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 flex justify-between font-mono text-[10px]">
+           <span class="${o.margin_nm >= 0 ? 'text-emerald-300' : 'text-rose-300'}">${o.airport} RWY ${o.runway}</span>
+           <span class="text-slate-400">${o.distance_nm}nm · margin ${o.margin_nm >= 0 ? '+' : ''}${o.margin_nm} · XW ${o.crosswind_kt ?? '-'}</span>
+         </div>`).join('')
+    : '<div class="text-[10px] text-slate-500">Guardian found nothing within glide-plus-margin — terrain/sea below.</div>';
+  card.classList.remove('hidden');
+  if (navigator.vibrate) navigator.vibrate([150, 90, 150]);
+  const handler = async (ev) => {
+    const choice = ev.target?.dataset?.choice;
+    if (!choice) return;
+    card.removeEventListener('click', handler);
+    card.classList.add('hidden');
+    const v = verdictFor(choice, opts);
+    ctx.decisions.push({ t_s: Math.round(simT), type: 'engine_failure', choice, ok: v.ok, why: v.why,
+                         best: opts[0] ? `${opts[0].airport} RWY ${opts[0].runway}` : null });
+    showToast(`Logged: ${choice.toUpperCase()} — ${v.why}`, v.ok === false ? 'warn' : 'info', 4500);
+    resumeSim();
+  };
+  card.addEventListener('click', handler);
+}
+
+function resumeSim() {
+  const ctx = simRun.ctx;
+  if (!ctx || !ctx.paused) return;
+  ctx.paused = false;
+  simRun.active = true;
+  ctx.t0 = performance.now() - ctx.lastSimT * (ctx.durRealS * 1000) / ctx.simTotalS;
+  simRun.raf = requestAnimationFrame(ctx.frame);
+}
+
 function stopSimReplay(manual) {
   simRun.active = false;
   cancelAnimationFrame(simRun.raf);
+  if (simRun.ctx) simRun.ctx.paused = false;
+  const card = $('decCard');
+  if (card) card.classList.add('hidden');
   simChipHtml().classList.remove('show');
   terrainScene.setProgress(window.__richdaleRouteProgress ?? null);
+  simRun.ctx = null;
   if (manual) showToast('Simulation stopped.', 'info', 2500);
 }
 
@@ -1390,14 +1496,40 @@ $('simReplayBtn')?.addEventListener('click', async () => {
     const totalNm = res.totals.distance_nm || tl[tl.length - 1].distance_nm || 1;
     const tas = parseFloat($('tasInput').value) || 112;
     const durRealS = Math.max(10, Math.min(40, res.totals.sim_time_s / 25));
-    const t0 = performance.now();
+    const injects = (SIM_SCENARIOS[$('simScenario')?.value] || []).map(x => ({ ...x, fired: false }));
+    simRun.ctx = {
+      res, tl, totalNm, tas, durRealS,
+      simTotalS: res.totals.sim_time_s,
+      t0: performance.now(), lastSimT: 0, paused: false,
+      glideRatio: parseFloat(localStorage.getItem('richdaleGlideRatio') || '9'),
+      bestGlideKt: 75, decisions: [],
+      frame: null,
+    };
+    simRun.ctx.frame = frame;
     simRun.active = true;
     simChipHtml().classList.add('show');
-    showToast(`Ghost flight started — ${res.wind_samples_used} GFS samples · est ${fmtMMSS(res.totals.sim_time_s)} vs ${fmtMMSS(res.totals.still_air_time_s)} still-air.`, 'info', 6000);
-    const frame = (now) => {
+    showToast(`Ghost flight started — ${res.wind_samples_used} GFS samples · est ${fmtMMSS(res.totals.sim_time_s)} vs ${fmtMMSS(res.totals.still_air_time_s)} still-air.` +
+      (injects.length ? ` Scenario: ${injects.length} event${injects.length > 1 ? 's' : ''} armed.` : ''), 'info', 6000);
+    async function frame(now) {
       if (!simRun.active) return;
-      const fracT = (now - t0) / 1000 / durRealS;
-      const simT = fracT * res.totals.sim_time_s;
+      const ctx = simRun.ctx;
+      const fracT = (now - ctx.t0) / 1000 / ctx.durRealS;
+      const simT = fracT * ctx.simTotalS;
+      ctx.lastSimT = simT;
+      // scenario injects
+      for (const inj of injects) {
+        if (!inj.fired && inj.type === 'engine_failure' && simT >= inj.at_frac * ctx.simTotalS) {
+          inj.fired = true;
+          let i2 = 0;
+          while (i2 < tl.length - 1 && tl[i2 + 1].t < simT) i2++;
+          const aa = tl[i2], bb = tl[Math.min(tl.length - 1, i2 + 1)];
+          const kk = (simT - aa.t) / Math.max(0.001, bb.t - aa.t);
+          fireEngineFailure(ctx, simT,
+            aa.latitude + (bb.latitude - aa.latitude) * kk,
+            aa.longitude + (bb.longitude - aa.longitude) * kk);
+          return;   // paused — resumed from the decision card
+        }
+      }
       // locate timeline bracket
       let i = 0;
       while (i < tl.length - 1 && tl[i + 1].t < simT) i++;
@@ -1419,12 +1551,21 @@ $('simReplayBtn')?.addEventListener('click', async () => {
       if (frac >= 0.9995 || simT >= res.totals.sim_time_s) {
         stopSimReplay(false);
         const dTot = Math.round(res.totals.drift_s / 60);
-        showToast(`Ghost flight complete — ${fmtMMSS(res.totals.sim_time_s)} elapsed, avg GS ${res.totals.avg_gs_kt} kt, ${dTot >= 0 ? '+' : ''}${dTot} min vs still air.`, 'info', 9000);
+        let debrief = '';
+        const dec = ctx.decisions || [];
+        if (dec.length) {
+          const lines = dec.map(d => {
+            const mark = d.ok === true ? '✓' : d.ok === false ? '✗' : '·';
+            return `${mark} T+${fmtMMSS(d.t_s)} ${d.choice.toUpperCase()} (${d.why}${d.best ? ` → best was ${d.best}` : ''})`;
+          });
+          debrief = ' Debrief: ' + lines.join(' | ');
+        }
+        showToast(`Ghost flight complete — ${fmtMMSS(res.totals.sim_time_s)} elapsed, avg GS ${res.totals.avg_gs_kt} kt, ${dTot >= 0 ? '+' : ''}${dTot} min vs still air.${debrief}`, dec.some(d => d.ok === false) ? 'warn' : 'info', 14000);
         return;
       }
       simRun.raf = requestAnimationFrame(frame);
-    };
-    simRun.raf = requestAnimationFrame(frame);
+    }
+    simRun.raf = requestAnimationFrame(simRun.ctx.frame);
   } catch (err) {
     showToast(`Simulation failed: ${err.message}`, 'error');
   } finally {

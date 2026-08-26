@@ -85,6 +85,7 @@ step · and what's **behind it** (data source, physics, honest limits).
 | Waypoints: VOR · NDB · reporting points | PLAN — `VLC` · `NDB:AA` · `RP:N-1` / `LEVC:N-1` | Pre-flight |
 | Adjust route by dragging on the map | **✎ Edit trip on map** | Pre-flight |
 | Fly the route on today's winds | **▶ Simulate flight** → corridor view | Pre-flight |
+| Rehearse engine failure decisions | Scenario dropdown → Simulate → decision card | Pre-flight |
 | Pick best cruise altitude | WEATHER tab → wind advisor | Pre-flight |
 | See weather at my ETA | WEATHER tab → Fly-the-Future slider | Pre-flight |
 | Know when sun blinds each leg | BRIEF tab → ☀ Glare Compass | Pre-flight |
@@ -205,6 +206,26 @@ your recorded track as GPX after a flight.
   time). It answers *"when / how much fuel / how much drift if I fly this
   plan through this sky"* — it does NOT model aircraft dynamics, climb
   profiles or turbulence, and says so in every API response.
+
+### 4.10 Scenario trainer — decision injects during the ghost flight (Tier B)
+* **Where:** the **Scenario:** dropdown next to ▶ Simulate flight.
+* **When:** practising the failure loop — recognise, decide, commit — on your
+  own route before you ever need it for real.
+* **How:** pick a scenario, press Simulate:
+  * **Engine failure mid-route / late** — at half or three-quarters of the
+    way the replay freezes with a full decision card: your simulated position,
+    the aloft wind proxy, and **live Guardian output** computed for that exact
+    point and altitude (top runways with distance, glide margin and crosswind).
+  * You answer with one of three calls: *commit to best option*, *continue to
+    destination*, or *own call*. Each is timestamped and logged.
+  * The replay resumes; at the end a **debrief** appends verdicts — ✓ where a
+    reachable runway existed and you took it, ✗ where you continued past one,
+    · for own-calls. Sometimes Guardian's honest answer is *"nothing within
+    glide-plus-margin"* (mid-Castellón at 6,500 ft genuinely is); then fast
+    commitment itself is the graded skill.
+* **Behind it & honesty:** the judge is the same deterministic Guardian physics
+  that flies with you — no separate scoring model, no LLM in the loop. Inject
+  timing is fixed per scenario so runs are repeatable.
 
 ---
 
