@@ -742,19 +742,19 @@ tailwind.config = {
           <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
         </div>
         <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
-          <button data-a="esp" data-d="c" class="chip px-2 py-1 text-[10px] font-bold">SIGWX D+1 AM</button>
-          <button data-a="esp" data-d="d" class="chip px-2 py-1 text-[10px] font-bold">D+1 PM</button>
-          <button data-a="esp" data-d="e" class="chip px-2 py-1 text-[10px] font-bold">D+2 AM</button>
-          <button data-a="esp" data-d="f" class="chip px-2 py-1 text-[10px] font-bold">D+2 PM</button>
+          <button data-a="__frentes" data-d="000" class="chip px-2 py-1 text-[10px] font-bold">SIGWX +0</button>
+          <button data-a="__frentes" data-d="024" class="chip px-2 py-1 text-[10px] font-bold">+24</button>
+          <button data-a="__frentes" data-d="036" class="chip px-2 py-1 text-[10px] font-bold">+36</button>
+          <button data-a="__frentes" data-d="048" class="chip px-2 py-1 text-[10px] font-bold">+48</button>
+          <button data-a="__frentes" data-d="060" class="chip px-2 py-1 text-[10px] font-bold">+60</button>
+          <button data-a="__frentes" data-d="072" class="chip px-2 py-1 text-[10px] font-bold">+72</button>
         </div>
         <div class="flex flex-wrap gap-1.5 mb-2">
-          <span class="text-[9px] uppercase tracking-widest text-slate-500 self-center mr-1">Forecast maps</span>
-          <button data-a="__previstos" data-d="h24" class="chip px-2 py-1 text-[10px] font-bold">H+24</button>
-          <button data-a="__previstos" data-d="h36" class="chip px-2 py-1 text-[10px] font-bold">H+36</button>
-          <button data-a="__previstos" data-d="h48" class="chip px-2 py-1 text-[10px] font-bold">H+48</button>
-          <button data-a="__previstos" data-d="h60" class="chip px-2 py-1 text-[10px] font-bold">H+60</button>
-          <button data-a="__previstos" data-d="h72" class="chip px-2 py-1 text-[10px] font-bold">H+72</button>
+          <span class="text-[9px] uppercase tracking-widest text-slate-500 self-center mr-1">API (key)</span>
           <button data-a="__analisis" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">SURFACE ANALYSIS</button>
+          <button data-a="__previstos" data-d="h24" class="chip px-2 py-1 text-[10px] font-bold">FCST H+24</button>
+          <button data-a="__previstos" data-d="h48" class="chip px-2 py-1 text-[10px] font-bold">H+48</button>
+          <button data-a="__previstos" data-d="h72" class="chip px-2 py-1 text-[10px] font-bold">H+72</button>
         </div>
         <div id="sigwxBody" class="text-[11px] font-mono text-slate-300"></div>
       </div>
@@ -4791,20 +4791,30 @@ async function aemetFetchJson(path) {
   return body;
 }
 
+let frentesCache = null;
+
 async function sigwxGo(ambito, dia) {
   if (sigwxBusy) return;
   sigwxBusy = true;
   const box = $('sigwxBody');
   const label = ambito === '__analisis' ? 'surface analysis'
     : ambito === '__previstos' ? `forecast ${dia.toUpperCase()}`
-    : `SIGWX España ${dia}`;
-  box.innerHTML = `<span class="text-slate-500">fetching ${label} chart via your browser…</span>`;
-  $('sigwxTabs').querySelectorAll('button').forEach(b => b.style.background = '');
+    : ambito === '__frentes' ? `SIGWX +${dia}h` : dia;
+  box.innerHTML = `<span class="text-slate-500">fetching ${label} chart…</span>`;
+  $('sigwxCard').querySelectorAll('button[data-a]').forEach(b => b.style.background = '');
   try {
+    if (ambito === '__frentes') {
+      if (!frentesCache) frentesCache = await api('/api/aemet/frentes');
+      const img = (frentesCache.images || []).find(i => i.step === dia);
+      if (!img) throw new Error(`step +${dia}h not in run ${frentesCache.run_utc}`);
+      box.innerHTML =
+        `<img src="${img.url}" alt="AEMET SIGWX" class="w-full rounded-lg my-1 bg-white/5">` +
+        `<div class="text-[8px] text-slate-500 mt-1">run ${frentesCache.run_utc}Z · source: ${frentesCache.source} · ${new Date().toLocaleTimeString()}Z</div>`;
+      return;
+    }
     let path;
     if (ambito === '__analisis') path = '/mapasygraficos/analisis';
-    else if (ambito === '__previstos') path = `/mapasygraficos/previstos/${dia}`;
-    else path = `/mapasygraficos/mapassignificativos/fecha/${new Date().toISOString().slice(0, 10)}/${ambito}/${dia}`;
+    else path = `/mapasygraficos/previstos/${dia}`;
     const meta = await aemetFetchJson(path);
     // datos may be an image itself, or JSON listing images
     const head = await fetch(meta.datos);

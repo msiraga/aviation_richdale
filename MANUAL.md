@@ -177,15 +177,15 @@ step · and what's **behind it** (data source, physics, honest limits).
   VFR/MVFR/IFR), TEMPO/PROB as thin sub-bars; long-press for decoded values.
 * **Cloud strip** — 12 h of low/mid/high cloud columns at the route midpoint.
 
-> **AEMET SIGWX charts** live behind their OpenData API. Put your free key
-> in `.env.txt` as `AEMET_API_KEY=…` (git-ignored, never logged). The
-> **SIGWX · AEMET** card fetches the charts **through your browser**, which is
-> also how you get past AEMET's bot shield: their F5 gateway silently returns
-> empty bodies to server-side/scripted clients (proven by the DIAGNOSE
-> button's per-endpoint HTTP + byte counts) while real browsers sail through.
-> España D0/D+1, Baleares, Canarias and the surface-analysis chart all use
-> this path; if your own browser ever gets challenged too, the card offers a
-> direct link to AEMET's aviation page.
+> **Weather charts** come from three AEMET sources, each labeled on the card:
+> **SIGWX +24…+72 h** (mapa de frentes — public, no key, latest model run
+> auto-discovered), **Surface analysis** and **Forecast maps H+24/48/72**
+> (OpenData API — need `AEMET_API_KEY=…` in `.env.txt`, fetched through your
+> browser so AEMET's bot shield passes you). The old OpenData significant-
+> weather archive is discontinued by AEMET itself ("No hay datos" for every
+> date since 2020), which is why the SIGWX row reads the public page instead.
+> If a chart button errors, press **DIAGNOSE**: it prints per-endpoint HTTP
+> status and byte counts so you can see exactly where it broke.
 
 ### 4.5 NOTAMS tab
 Automatic bounding-box fetch around the whole route, active items only
@@ -454,7 +454,7 @@ altitude feeding Night check, Guardian and FINAL callouts.
 | METAR/TAF/history | NOAA AWC JSON | none (fresh) | loud error; stale values labelled |
 | Raw METAR/TAF briefing | NOAA AWC `format=raw` feeds | none (fresh) | per-airport visible error |
 | Spain SIGMETs (AEMET-issued) | NOAA AWC SIGMET feed, FIR-filtered | none (fresh) | visible "feed unavailable" note |
-| AEMET SIGWX charts / analysis | AEMET OpenData API (`AEMET_API_KEY` in .env.txt) | disk, per-image | DIAGNOSE button shows per-endpoint HTTP+bytes |
+| AEMET SIGWX charts / analysis | aemet.es mapa de frentes (public) + OpenData API (`AEMET_API_KEY`) | memory 30 min (frentes) / disk per-image | DIAGNOSE button shows per-endpoint HTTP+bytes |
 | Winds aloft | Open-Meteo GFS pressure grids | 20 min/cell | level skipped, ranking continues |
 | Cloud forecast | Open-Meteo hourly low/mid/high | — | hidden with message |
 | Terrain | AWS terrarium tiles (SRTM) | disk | profile skipped with note |

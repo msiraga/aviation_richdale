@@ -1189,6 +1189,56 @@ async def get_aemet_sigwx(ambito: str = "espana", dia: int = 0):
     return ok_payload({"images": out, "caption": str(cap), "source": "AEMET OpenData"})
 
 
+_FRENTES_STEP_CODES = {
+    "000": "gpx0a000",
+    "024": "g1x0a2d1",
+    "036": "g1x0a2c1",
+    "048": "g1x0a2d2",
+    "060": "g1x0a2c2",
+    "072": "g1x0a2d3",
+}
+_frentes_cache: dict[str, Any] = {"at": 0.0, "data": None}
+
+
+@app.get("/api/aemet/frentes")
+async def get_aemet_frentes():
+    """Latest significant-weather ('mapa de frentes') chart set from aemet.es public pages."""
+    import time as _time
+    now_mono = _time.monotonic()
+    if _frentes_cache["data"] and now_mono - _frentes_cache["at"] < 1800:
+        return ok_payload(_frentes_cache["data"])
+    now = datetime.now(timezone.utc)
+    day = timedelta(days=1)
+    runs = []
+    for cand in (
+        now.replace(hour=0, minute=0, second=0, microsecond=0),
+        (now - day).replace(hour=12, minute=0, second=0, microsecond=0),
+        (now - day).replace(hour=0, minute=0, second=0, microsecond=0),
+        (now - 2 * day).replace(hour=12, minute=0, second=0, microsecond=0),
+    ):
+        if cand <= now:
+            runs.append(cand)
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for run in runs:
+            base = run.strftime("%Y%m%d%H")
+            found = []
+            for step, code in _FRENTES_STEP_CODES.items():
+                url = (f"https://www.aemet.es/imagenes_d/eltiempo/prediccion/"
+                       f"mapa_frentes/{base}%2B{step}_ww_{code}.gif")
+                try:
+                    r = await client.head(url)
+                    if r.status_code == 200:
+                        found.append({"step": step, "url": url})
+                except httpx.HTTPError:
+                    continue
+            if len(found) >= 3:
+                data = {"run_utc": base, "images": found,
+                        "source": "aemet.es mapa de frentes (public)"}
+                _frentes_cache.update(at=now_mono, data=data)
+                return ok_payload(data)
+    raise BadRequest("no significant-weather chart run found on aemet.es")
+
+
 @app.get("/api/aemet/image")
 async def get_aemet_image(f: str):
     """Serve cached AEMET image by filename only (no paths, no traversal)."""
