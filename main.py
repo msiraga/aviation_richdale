@@ -832,6 +832,145 @@ class TafTimelineRequest(BaseModel):
     icaos: list[str] = Field(min_length=1, max_length=8)
 
 
+class ReplayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    waypoints: list[list[float]] = Field(min_length=2, max_length=14)
+    cruise_altitude_ft: int = Field(ge=500, le=20000)
+    tas_kt: float = Field(gt=20, le=400)
+    fuel_rate_gph: float | None = Field(default=None, gt=0, le=100)
+
+
+@app.post("/api/simulation/replay")
+async def post_simulation_replay(body: ReplayRequest):
+    """Ghost-flyer: integrate the route through TODAY'S forecast winds.
+
+    Point-mass kinematics only — position advances along each leg with the
+    wind triangle solved at every step from GFS samples interpolated along
+    the route. No aircraft dynamics are pretended; this answers 'when/fuel/
+    drift if I fly this plan through this sky', nothing more.
+    """
+    pts_in = [(float(lat), float(lon)) for lat, lon in body.waypoints]
+    for lat, lon in pts_in:
+        if abs(lat) > 90 or abs(lon) > 180:
+            raise BadRequest("each waypoint needs valid latitude/longitude")
+
+    def hav(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return haversine_distance_nm(a[0], a[1], b[0], b[1])
+
+    def course(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return initial_true_bearing_deg(a[0], a[1], b[0], b[1])
+
+    total_nm = sum(hav(pts_in[i], pts_in[i + 1]) for i in range(len(pts_in) - 1))
+    if total_nm <= 0:
+        raise BadRequest("route has zero length")
+
+    # ---- coarse wind field along the route (one batched Open-Meteo call) ----
+    k = min(12, max(4, int(total_nm / 40)))
+    samples: list[tuple[float, float]] = []
+    for i in range(k):
+        f = i / (k - 1) if k > 1 else 0.0
+        target = f * total_nm
+        acc = 0.0
+        for j in range(len(pts_in) - 1):
+            seg = hav(pts_in[j], pts_in[j + 1])
+            if acc + seg >= target or j == len(pts_in) - 2:
+                t = (target - acc) / seg if seg > 0 else 0.0
+                t = max(0.0, min(1.0, t))
+                samples.append((
+                    pts_in[j][0] + (pts_in[j + 1][0] - pts_in[j][0]) * t,
+                    pts_in[j][1] + (pts_in[j + 1][1] - pts_in[j][1]) * t,
+                ))
+                break
+            acc += seg
+    try:
+        batch = await sample_winds_batch(samples, float(body.cruise_altitude_ft))
+    except Exception as exc:  # noqa: BLE001 — explicit degradation, never fake calm
+        raise BadRequest(
+            f"winds unavailable for replay ({exc}); simulation needs Open-Meteo"
+        ) from exc
+    wind_list = [
+        (lat, lon, w.wind_from_deg_true, w.wind_speed_kt)
+        for (lat, lon), w in batch.items()
+    ]
+    if not wind_list:
+        raise BadRequest("wind grid returned no usable samples")
+
+    def wind_at(lat: float, lon: float) -> tuple[float, float]:
+        best = min(wind_list, key=lambda s: (s[0] - lat) ** 2 + ((s[1] - lon) * math.cos(math.radians(lat))) ** 2)
+        return best[2], best[3]
+
+    def advance(p: tuple[float, float], crs_deg: float, dist_nm: float) -> tuple[float, float]:
+        rad = math.radians(crs_deg)
+        dlat = dist_nm * math.cos(rad) / 60.0
+        dlon = dist_nm * math.sin(rad) / (60.0 * max(0.2, math.cos(math.radians(p[0]))))
+        return (p[0] + dlat, p[1] + dlon)
+
+    # ---- integration -------------------------------------------------------
+    timeline: list[dict[str, Any]] = []
+    fuel_gal = 0.0
+    elapsed_s = 0.0
+    done_nm = 0.0
+    still_air_s = total_nm / body.tas_kt * 3600.0
+
+    for li in range(len(pts_in) - 1):
+        a, b = pts_in[li], pts_in[li + 1]
+        leg_crs = course(a, b)
+        p = a
+        remaining = hav(a, b)
+        guard = 0
+        while remaining > 0.05 and guard < 600:
+            guard += 1
+            crs_to_go = course(p, b)
+            w_from, w_spd = wind_at(*p)
+            rel = math.radians((w_from - crs_to_go) % 360.0)
+            xw = w_spd * math.sin(rel)          # from the right -> positive
+            hw = w_spd * math.cos(rel)          # headwind positive
+            tas = body.tas_kt
+            root = max(1.0, tas * tas - xw * xw)
+            gs = math.sqrt(root) - hw           # groundspeed along course
+            gs = max(15.0, gs)                  # physics floor, never negative-time
+            dt_s = min(60.0, remaining / gs * 3600.0)
+            step_nm = gs * dt_s / 3600.0
+            p = advance(p, crs_to_go, step_nm)
+            remaining = hav(p, b)
+            elapsed_s += dt_s
+            done_nm += step_nm
+            if body.fuel_rate_gph:
+                fuel_gal += body.fuel_rate_gph * dt_s / 3600.0
+            if len(timeline) == 0 or elapsed_s - timeline[-1]["t"] >= 60.0 or remaining <= 0.05:
+                timeline.append({
+                    "t": round(elapsed_s, 1),
+                    "latitude": round(p[0], 5),
+                    "longitude": round(p[1], 5),
+                    "leg": li,
+                    "gs_kt": round(gs, 1),
+                    "track_deg": round(crs_to_go, 1),
+                    "wind_from_deg": round(w_from),
+                    "wind_kt": round(w_spd, 1),
+                    "fuel_gal": round(fuel_gal, 2) if body.fuel_rate_gph else None,
+                    "distance_nm": round(done_nm, 2),
+                })
+
+    drift_s = elapsed_s - still_air_s
+    return ok_payload({
+        "timeline": timeline,
+        "totals": {
+            "distance_nm": round(total_nm, 2),
+            "sim_time_s": round(elapsed_s),
+            "still_air_time_s": round(still_air_s),
+            "drift_s": round(drift_s),
+            "fuel_gal": round(fuel_gal, 2) if body.fuel_rate_gph else None,
+            "avg_gs_kt": round(total_nm / (elapsed_s / 3600.0), 1) if elapsed_s > 0 else None,
+        },
+        "wind_samples_used": len(wind_list),
+        "method_note": (
+            "point-mass kinematics through GFS winds sampled every "
+            f"~{total_nm / k:.0f} NM; no aircraft dynamics, no turbulence model"
+        ),
+    })
+
+
 @app.post("/api/weather/taf/timeline")
 async def post_taf_timeline(body: TafTimelineRequest):
     """TAF periods serialized as validity-bar segments per station."""

@@ -223,6 +223,9 @@ tailwind.config = {
     font: bold 13px/26px system-ui; text-align: center; cursor: grab;
     box-shadow: 0 0 10px rgba(34,211,238,.7); border: 2px solid #e0faff; }
   .trip-end { background: #f59e0b; color: #241300; box-shadow: 0 0 10px rgba(245,158,11,.7); border-color: #fff3d6; }
+  #simChip { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+    z-index: 30; display: none; }
+  #simChip.show { display: flex; }
   #helpSheet dl div { border-top: 1px solid rgba(255,255,255,.06); }
   /* ground (taxi) view card — bottom-left so it never stacks on Guardian */
   #groundPanel { position: absolute; left: 12px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: 300px; max-width: calc(100vw - 24px); display: none; }
@@ -660,6 +663,10 @@ tailwind.config = {
       <button id="editTripBtn" type="button"
               class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-cyan-200">
         ✎ Edit trip on map
+      </button>
+      <button id="simReplayBtn" type="button"
+              class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-violet-200">
+        ▶ Simulate flight (today's winds)
       </button>
       <button id="submitBtn" type="submit"
               class="btn-primary w-full rounded-xl py-3 text-sm uppercase tracking-[0.18em] mt-1">
@@ -1326,6 +1333,104 @@ function refreshEditMarkers() {
   };
   map.on('click', tripEdit.clickHandler);
 }
+
+/* ---------------- ghost-flyer: replay the plan through today's winds ------ */
+
+const simRun = { active: false, raf: 0 };
+
+function simChipHtml() {
+  if (!$('simChip')) {
+    const div = document.createElement('div');
+    div.id = 'simChip';
+    div.className = 'glass px-4 py-2 items-center gap-4 font-mono text-[11px]';
+    div.innerHTML =
+      '<span class="text-[9px] tracking-[0.2em] text-violet-300 font-bold">SIM</span>' +
+      '<span class="text-slate-200" id="simT">T+00:00</span>' +
+      '<span class="text-cyan-200" id="simGs">-- kt</span>' +
+      '<span class="text-emerald-200" id="simFuel"></span>' +
+      '<span class="text-amber-200" id="simDrift"></span>' +
+      '<button id="simStop" class="chip px-2 py-0.5 text-[10px] text-rose-200 ml-1">STOP</button>';
+    document.body.appendChild(div);
+    $('simStop').addEventListener('click', () => stopSimReplay(true));
+  }
+  return $('simChip');
+}
+
+function fmtMMSS(s) {
+  s = Math.max(0, Math.round(s));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function stopSimReplay(manual) {
+  simRun.active = false;
+  cancelAnimationFrame(simRun.raf);
+  simChipHtml().classList.remove('show');
+  terrainScene.setProgress(window.__richdaleRouteProgress ?? null);
+  if (manual) showToast('Simulation stopped.', 'info', 2500);
+}
+
+$('simReplayBtn')?.addEventListener('click', async () => {
+  if (simRun.active) { stopSimReplay(true); return; }
+  const pts = tripPointsFromNavlog();
+  if (!lastNavlog || pts.length < 2) { showToast('Compute a route first.', 'warn'); return; }
+  const btn = $('simReplayBtn');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/simulation/replay', {
+      method: 'POST',
+      body: {
+        waypoints: pts,
+        cruise_altitude_ft: parseInt($('altSlider').value, 10),
+        tas_kt: parseFloat($('tasInput').value) || 112,
+        fuel_rate_gph: (parseFloat($('fuelInput').value) || 0) > 0 ? parseFloat($('fuelInput').value) : null,
+      },
+    });
+    const tl = res.timeline || [];
+    if (!tl.length) { showToast('Replay returned no timeline.', 'error'); return; }
+    const totalNm = res.totals.distance_nm || tl[tl.length - 1].distance_nm || 1;
+    const tas = parseFloat($('tasInput').value) || 112;
+    const durRealS = Math.max(10, Math.min(40, res.totals.sim_time_s / 25));
+    const t0 = performance.now();
+    simRun.active = true;
+    simChipHtml().classList.add('show');
+    showToast(`Ghost flight started — ${res.wind_samples_used} GFS samples · est ${fmtMMSS(res.totals.sim_time_s)} vs ${fmtMMSS(res.totals.still_air_time_s)} still-air.`, 'info', 6000);
+    const frame = (now) => {
+      if (!simRun.active) return;
+      const fracT = (now - t0) / 1000 / durRealS;
+      const simT = fracT * res.totals.sim_time_s;
+      // locate timeline bracket
+      let i = 0;
+      while (i < tl.length - 1 && tl[i + 1].t < simT) i++;
+      const a = tl[i], b = tl[Math.min(tl.length - 1, i + 1)];
+      const span = Math.max(0.001, b.t - a.t);
+      const k = Math.max(0, Math.min(1, (simT - a.t) / span));
+      const distNow = (a.distance_nm + (b.distance_nm - a.distance_nm) * k);
+      const frac = Math.min(1, distNow / totalNm);
+      terrainScene.setProgress(frac);
+      $('simT').textContent = `T+${fmtMMSS(simT)}`;
+      $('simGs').textContent = `${Math.round(a.gs_kt + (b.gs_kt - a.gs_kt) * k)} kt`;
+      if (res.totals.fuel_gal != null) {
+        const rate = parseFloat($('fuelInput').value) || 0;
+        $('simFuel').textContent = `${(rate * simT / 3600).toFixed(1)} gal`;
+      } else $('simFuel').textContent = '';
+      const drift = simT - (distNow / tas) * 3600;
+      const dm = Math.round(drift / 60);
+      $('simDrift').textContent = `DRIFT ${dm >= 0 ? '+' : ''}${dm}m`;
+      if (frac >= 0.9995 || simT >= res.totals.sim_time_s) {
+        stopSimReplay(false);
+        const dTot = Math.round(res.totals.drift_s / 60);
+        showToast(`Ghost flight complete — ${fmtMMSS(res.totals.sim_time_s)} elapsed, avg GS ${res.totals.avg_gs_kt} kt, ${dTot >= 0 ? '+' : ''}${dTot} min vs still air.`, 'info', 9000);
+        return;
+      }
+      simRun.raf = requestAnimationFrame(frame);
+    };
+    simRun.raf = requestAnimationFrame(frame);
+  } catch (err) {
+    showToast(`Simulation failed: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $('editTripBtn')?.addEventListener('click', () => {
   tripEdit.on = !tripEdit.on;

@@ -84,6 +84,7 @@ step · and what's **behind it** (data source, physics, honest limits).
 | Plan a route | **PLAN** sidebar | Pre-flight |
 | Waypoints: VOR · NDB · reporting points | PLAN — `VLC` · `NDB:AA` · `RP:N-1` / `LEVC:N-1` | Pre-flight |
 | Adjust route by dragging on the map | **✎ Edit trip on map** | Pre-flight |
+| Fly the route on today's winds | **▶ Simulate flight** → corridor view | Pre-flight |
 | Pick best cruise altitude | WEATHER tab → wind advisor | Pre-flight |
 | See weather at my ETA | WEATHER tab → Fly-the-Future slider | Pre-flight |
 | Know when sun blinds each leg | BRIEF tab → ☀ Glare Compass | Pre-flight |
@@ -191,6 +192,19 @@ your recorded track as GPX after a flight.
   Every change reuses the full compute pipeline (winds, terrain, NOTAMs), so
   the nav log, corridor view and banners stay truthful. Toggle off to return
   the map to normal interaction.
+
+### 4.9 SIMULATE FLIGHT — ghost flyer (Tier A)
+* **Where:** **▶ Simulate flight (today's winds)** button under the composer.
+* **When:** after computing a route — before you commit to a departure time,
+  or to sanity-check an altitude choice against the actual sky.
+* **How:** one press. The aircraft dot flies your route in the CORRIDOR view
+  at compressed speed while a readout chip tracks `T+ · GS · FUEL · DRIFT`
+  versus still-air. At the end: total time, average groundspeed and drift.
+* **Behind it & honesty:** point-mass kinematics through GFS winds sampled
+  every ~20–25 NM along the route (wind triangle solved each minute of sim
+  time). It answers *"when / how much fuel / how much drift if I fly this
+  plan through this sky"* — it does NOT model aircraft dynamics, climb
+  profiles or turbulence, and says so in every API response.
 
 ---
 
