@@ -161,6 +161,14 @@ step · and what's **behind it** (data source, physics, honest limits).
   how many sectors breach and the worst margin.
 
 ### 4.4 WEATHER tab
+* **Airport WX brief** *(top card)* — a chip per airport on your route;
+  tapping one shows its **real raw METAR** (latest plus the last few for
+  trend) with a decoded one-liner beneath (wind/visibility/temp/QNH/wx), and
+  the **full raw TAF** in an expandable block. Straight from NOAA AWC's raw
+  feeds — no keys, no reformatting lies.
+* **SIGMET · Spain (live)** — active SIGMETs for Madrid/Barcelona/Canarias
+  FIRs as issued by AEMET and relayed through NOAA AWC, refreshed on demand.
+  An empty list genuinely means *no active significant weather over Spain*.
 * **Wind advisor** — see 4.2.
 * **⏩ Fly-the-Future** — slider NOW→+12 h: departure/arrival categories step
   through their TAF periods at that hour and a marker sweeps the cloud strip.
@@ -168,6 +176,11 @@ step · and what's **behind it** (data source, physics, honest limits).
 * **TAF windows** — colour-coded validity bars (green/blue/red =
   VFR/MVFR/IFR), TEMPO/PROB as thin sub-bars; long-press for decoded values.
 * **Cloud strip** — 12 h of low/mid/high cloud columns at the route midpoint.
+
+> AEMET's significant-weather **charts** moved behind their OpenData API
+> (free key). Set `AEMET_API_KEY` in the environment to enable chart fetches;
+> without it the app shows live AEMET SIGMET text via NOAA instead of
+> pretending to have the images.
 
 ### 4.5 NOTAMS tab
 Automatic bounding-box fetch around the whole route, active items only
@@ -434,6 +447,8 @@ altitude feeding Night check, Guardian and FINAL callouts.
 | Data | Source | Cache | Failure behaviour |
 |---|---|---|---|
 | METAR/TAF/history | NOAA AWC JSON | none (fresh) | loud error; stale values labelled |
+| Raw METAR/TAF briefing | NOAA AWC `format=raw` feeds | none (fresh) | per-airport visible error |
+| Spain SIGMETs (AEMET-issued) | NOAA AWC SIGMET feed, FIR-filtered | none (fresh) | visible "feed unavailable" note |
 | Winds aloft | Open-Meteo GFS pressure grids | 20 min/cell | level skipped, ranking continues |
 | Cloud forecast | Open-Meteo hourly low/mid/high | — | hidden with message |
 | Terrain | AWS terrarium tiles (SRTM) | disk | profile skipped with note |

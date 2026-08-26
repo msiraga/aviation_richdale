@@ -726,9 +726,25 @@ tailwind.config = {
       </div>
     </div>
 
-    <!-- WEATHER: wind advisor, TAF windows, cloud forecast -->
+    <!-- WEATHER: airport brief, wind advisor, TAF windows, SIGMET, clouds -->
     <div id="tab-wx" class="hidden">
-      <div id="windAdvice" class="glass p-3 rounded-xl border border-sky-400/20"></div>
+      <div id="aptBriefCard" class="glass p-3 rounded-xl border border-emerald-400/20">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Airport WX · METAR / TAF</span>
+          <button id="briefRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
+        </div>
+        <div id="briefChips" class="flex flex-wrap gap-1.5 mb-2"></div>
+        <div id="briefBody" class="text-[11px] font-mono text-slate-200 leading-snug max-h-[240px] overflow-y-auto"></div>
+      </div>
+      <div id="sigmetCard" class="glass mt-3 p-3 rounded-xl border border-rose-400/20">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">SIGMET · Spain (live)</span>
+          <button id="sigmetRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
+        </div>
+        <div id="sigmetBody" class="text-[11px] font-mono text-slate-200 leading-snug space-y-1"></div>
+        <div class="text-[8px] text-slate-500 mt-1.5 leading-snug">Official AEMET-issued SIGMETs relayed via NOAA AWC. For AEMET's significant-weather CHARTS, set the free AEMET_API_KEY env — see MANUAL §4.4.</div>
+      </div>
+      <div id="windAdvice" class="glass mt-3 p-3 rounded-xl border border-sky-400/20"></div>
       <div id="futureScrub" class="glass mt-3 p-3 rounded-xl border border-amber-400/20 hidden">
         <div class="flex items-center justify-between mb-1">
           <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Fly the future</span>
@@ -1621,6 +1637,8 @@ form.addEventListener('submit', async (ev) => {
     const result = await api('/api/navigation/log', { method: 'POST', body });
     lastNavlog = result;
     presentNavLog(result);
+    loadAirportBrief();
+    loadSpainSigmet();
     loadWindAdvice(result);
     loadTafTimelines(result);
     loadCloudStrip(result);
@@ -4647,6 +4665,96 @@ setInterval(() => {
 /* ===================== TAF TIMELINE + CLOUDS + NOTAMS ====================== */
 
 const CAT_BG = { VFR: '#22c55e', MVFR: '#3b82f6', IFR: '#ef4444' };
+
+/* ---------------- airport WX brief (raw METAR/TAF) + Spain SIGMET --------- */
+
+const aptBrief = { icaos: [], data: null, selected: null };
+
+function decodeMetarLine(raw) {
+  const bits = [];
+  const w = raw.match(/\b(\d{3}|VRB)(\d{2,3})(G(\d{2,3}))?KT\b/);
+  if (w) bits.push(`WIND ${w[1]}°/${w[2]}kt${w[4] ? ' G' + w[4] : ''}`);
+  const v = raw.match(/\b(9999|\d{4})\b(?!KT)/);
+  if (v) bits.push(`VIS ${v[1] === '9999' ? '10km+' : v[1] + 'm'}`);
+  const t = raw.match(/\b(M?\d{2})\/(M?\d{2})\b/);
+  if (t) bits.push(`T ${t[1].replace('M', '-')}°C DP ${t[2].replace('M', '-')}°C`);
+  const q = raw.match(/\bQ(\d{4})\b/);
+  if (q) bits.push(`QNH ${q[1]} hPa`);
+  const wx = raw.match(/\s(-{1,2}[A-Z]{2,9}(?:\s?-{1,2}[A-Z]{2,9})*)\s(?=[MTQ\d])/);
+  if (wx) bits.push(`WX ${wx[1].trim()}`);
+  const cavok = /\bCAVOK\b/.test(raw);
+  if (cavok) bits.push('CAVOK');
+  return bits.join(' · ');
+}
+
+async function loadAirportBrief() {
+  if (!lastNavlog || !lastNavlog.route) return;
+  const icaos = [...new Set(lastNavlog.route)].filter(l => /^[A-Z]{4}$/.test(l || '')).slice(0, 6);
+  if (!icaos.length) return;
+  aptBrief.icaos = icaos;
+  const chips = $('briefChips');
+  chips.innerHTML = icaos.map((c, i) =>
+    `<button class="chip px-2.5 py-1 text-[10px] font-bold" data-icao="${c}" style="${i === 0 ? 'background:rgba(52,211,153,.25)' : ''}">${c}</button>`).join('');
+  chips.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    aptBrief.selected = b.dataset.icao;
+    chips.querySelectorAll('button').forEach(x => x.style.background = '');
+    b.style.background = 'rgba(52,211,153,.25)';
+    renderBrief();
+  }));
+  $('briefBody').innerHTML = '<span class="text-slate-500">fetching live METAR/TAF…</span>';
+  try {
+    const res = await api('/api/weather/briefing', { method: 'POST', body: { icaos } });
+    aptBrief.data = res.briefings;
+    aptBrief.selected = icaos.find(c => aptBrief.data[c]?.metar_raw?.length) || icaos[0];
+    renderBrief();
+  } catch (err) {
+    $('briefBody').innerHTML = `<span class="text-rose-300">brief unavailable: ${err.message}</span>`;
+  }
+}
+
+function renderBrief() {
+  const d = aptBrief.data && aptBrief.data[aptBrief.selected];
+  const box = $('briefBody');
+  if (!d) { box.textContent = 'no data'; return; }
+  let html = '';
+  if (d.error) html += `<div class="text-rose-300">${aptBrief.selected}: ${d.error}</div>`;
+  if (d.metar_raw_error) html += `<div class="text-amber-300">METAR: ${d.metar_raw_error}</div>`;
+  if (d.metar_raw && d.metar_raw.length) {
+    html += `<div class="text-emerald-300 mb-0.5">${aptBrief.selected} · latest METAR${d.metar_raw.length > 1 ? ` (+${d.metar_raw.length - 1} older)` : ''}</div>`;
+    html += `<div class="whitespace-pre-wrap text-cyan-100">${d.metar_raw[0].replace(/^METAR\s*/, '')}</div>`;
+    const dec = decodeMetarLine(d.metar_raw[0]);
+    if (dec) html += `<div class="text-[10px] text-slate-400 mb-1">${dec}</div>`;
+    if (d.metar_raw.length > 1) {
+      html += `<details class="mt-1"><summary class="text-[9px] tracking-widest text-slate-500 cursor-pointer">older observations</summary>
+        <div class="whitespace-pre-wrap text-slate-400 mt-1">${d.metar_raw.slice(1).map(l => l.replace(/^METAR\s*/, '')).join('\n')}</div></details>`;
+    }
+  }
+  if (d.taf_raw_error) html += `<div class="text-amber-300 mt-1">TAF: ${d.taf_raw_error}</div>`;
+  if (d.taf_raw) {
+    html += `<details class="mt-1.5"><summary class="text-[9px] tracking-widest text-emerald-500 cursor-pointer">TAF (raw)</summary>
+      <div class="whitespace-pre-wrap text-slate-200 mt-1">${d.taf_raw.replace(/^TAF/, '').trim()}</div></details>`;
+  }
+  box.innerHTML = html || '<span class="text-slate-500">nothing returned</span>';
+}
+
+async function loadSpainSigmet() {
+  const box = $('sigmetBody');
+  try {
+    const res = await api('/api/sigmet/spain');
+    if (!res.sigmets.length) {
+      box.innerHTML = `<span class="text-slate-400">No active SIGMET over Spanish FIRs</span>
+        <span class="text-slate-600">(${res.checked_worldwide} active worldwide · checked ${new Date(res.fetched_at).toLocaleTimeString()}Z)</span>`;
+      return;
+    }
+    box.innerHTML = res.sigmets.map(s =>
+      `<div><span class="chip px-1.5 py-0.5 text-[8px] text-rose-200 mr-1.5">${s.fir}</span>${s.raw}</div>`).join('');
+  } catch (err) {
+    box.innerHTML = `<span class="text-amber-300">SIGMET feed unavailable: ${err.message}</span>`;
+  }
+}
+
+$('briefRefresh')?.addEventListener('click', loadAirportBrief);
+$('sigmetRefresh')?.addEventListener('click', loadSpainSigmet);
 
 async function loadTafTimelines(navlog) {
   const box = $('tafTimeline');

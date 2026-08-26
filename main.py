@@ -971,6 +971,84 @@ async def post_simulation_replay(body: ReplayRequest):
     })
 
 
+class BriefRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    icaos: list[str] = Field(min_length=1, max_length=8)
+
+
+@app.post("/api/weather/briefing")
+async def post_weather_briefing(body: BriefRequest):
+    """Real RAW METAR history + full raw TAF per airport (NOAA AWC, no keys)."""
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True,
+                                 headers={"User-Agent": USER_AGENT}) as client:
+        for icao in body.icaos:
+            key = icao.strip().upper()[:4]
+            if not re.fullmatch(r"[A-Z]{4}", key):
+                out[icao] = {"error": "not an ICAO ident"}
+                continue
+            entry: dict[str, Any] = {}
+            try:
+                r = await client.get(
+                    "https://aviationweather.gov/api/data/metar",
+                    params={"ids": key, "format": "raw", "hours": 4},
+                )
+                lines = [ln for ln in (r.text or "").splitlines() if ln.startswith("METAR")]
+                entry["metar_raw"] = lines[:4]
+            except httpx.HTTPError as exc:
+                entry["metar_raw_error"] = f"NOAA unreachable: {exc.__class__.__name__}"
+            try:
+                t = await client.get(
+                    "https://aviationweather.gov/api/data/taf",
+                    params={"ids": key, "format": "raw"},
+                )
+                entry["taf_raw"] = (t.text or "").strip()
+            except httpx.HTTPError as exc:
+                entry["taf_raw_error"] = f"NOAA unreachable: {exc.__class__.__name__}"
+            out[key] = entry
+    return ok_payload({"briefings": out})
+
+
+@app.get("/api/sigmet/spain")
+async def get_sigmet_spain():
+    """Active SIGMETs for Spanish FIRs (Madrid/Barcelona/Canarias…) from NOAA AWC."""
+    import asyncio as _aio
+
+    def _fetch() -> Any:
+        r = httpx.get(
+            "https://aviationweather.gov/api/data/sigmet",
+            params={"format": "json", "hours": 6},
+            timeout=25.0,
+            headers={"User-Agent": USER_AGENT},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    try:
+        data = await _aio.to_thread(_fetch)
+    except Exception as exc:  # noqa: BLE001 — explicit degradation
+        return ok_payload({"sigmets": [], "note": f"SIGMET feed unavailable: {exc.__class__.__name__}"})
+    items = []
+    for s in data if isinstance(data, list) else []:
+        fir = str(s.get("fir", ""))
+        raw = str(s.get("rawText", ""))
+        if re.match(r"^(LE|GE|GC)", fir) or re.search(r"MADRID|BARCELONA|CANARIAS|CANARY", raw.upper()):
+            items.append({
+                "fir": fir,
+                "raw": raw,
+                "valid_from": s.get("validTimeFrom"),
+                "valid_to": s.get("validTimeTo"),
+                "hazard": s.get("hazard"),
+            })
+    return ok_payload({
+        "sigmets": items,
+        "checked_worldwide": len(data) if isinstance(data, list) else 0,
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "note": "empty list means no active SIGMET over Spain right now",
+    })
+
+
 @app.post("/api/weather/taf/timeline")
 async def post_taf_timeline(body: TafTimelineRequest):
     """TAF periods serialized as validity-bar segments per station."""
