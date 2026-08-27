@@ -113,6 +113,16 @@ tailwind.config = {
   .sidebar-enter { transform: translateX(-115%); opacity: .4; }
   .sidebar-visible { transform: translateX(0); opacity: 1; transition: transform .62s cubic-bezier(.19,1,.22,1), opacity .5s ease; }
 
+  #wxDrawer {
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+    transform: translateX(120%);
+    opacity: 0;
+  }
+  #wxDrawer:not(.hidden) {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
   .counter-value { font-variant-numeric: tabular-nums; }
 
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -667,10 +677,14 @@ tailwind.config = {
   </div>
 </div>
 
-<div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-40 w-[400px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3">
-  <div class="flex items-center justify-between">
-    <span class="text-xs font-extrabold uppercase tracking-[0.25em] text-sky-200">WEATHER BRIEF</span>
-    <button id="wxDrawerClose" class="chip px-3 py-1 text-xs">CLOSE &#10005;</button>
+<div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-50 w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3 pointer-events-auto"
+     style="transform: translateZ(0);">
+  <div class="flex items-center justify-between glass p-3 rounded-xl border border-sky-300/30">
+    <div class="flex items-center gap-2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/><circle cx="12" cy="12" r="4"/></svg>
+      <span class="text-xs font-extrabold uppercase tracking-[0.25em] text-sky-200">WEATHER BRIEF</span>
+    </div>
+    <button id="wxDrawerClose" class="chip px-3 py-1 text-xs font-bold text-rose-200 hover:bg-rose-500/20 transition">CLOSE &times;</button>
   </div>
   <div id="aptBriefCard" class="glass p-3 rounded-xl border border-emerald-400/20">
     <div class="flex items-center justify-between mb-1.5">
@@ -2350,8 +2364,30 @@ class TerrainScene {
     new ResizeObserver(() => this._resize()).observe(canvas.parentElement);
 
     const self = this;
+    this._frame = 0;
     (function loop() {
       requestAnimationFrame(loop);
+      self._frame++;
+      // Animate propeller (rotate rapidly around its axis)
+      if (self._propGroup) {
+        self._propGroup.rotation.x += 0.8;
+      }
+      // Animate water waves
+      if (self._water) {
+        const wpos = self._water.geometry.getAttribute('position');
+        for (let i = 0; i < wpos.count; i++) {
+          const ox = wpos.getX(i), oz = wpos.getZ(i);
+          wpos.setY(i, 0.5 + Math.sin(ox * 0.04 + self._frame * 0.03) * 0.4 + Math.cos(oz * 0.05 + self._frame * 0.02) * 0.3);
+        }
+        wpos.needsUpdate = true;
+        self._water.geometry.computeVertexNormals();
+      }
+      // Pulse exhaust glow
+      if (self._exhaust) {
+        const s = 0.8 + Math.sin(self._frame * 0.15) * 0.3;
+        self._exhaust.scale.set(s, s, s);
+        self._exhaust.material.opacity = 0.5 + Math.sin(self._frame * 0.15) * 0.2;
+      }
       self.renderer.render(self.scene, self.camera);
       self._applyCamera();
     })();
@@ -2484,64 +2520,146 @@ class TerrainScene {
   }
 
   _makeAircraft() {
-    /** Procedural low-wing trainer: body + wings + horizontal stab + vertical stab
-     * + prop disk + beacon. One group, one low-poly budget, max visibility. */
+    /** Impressive detailed low-wing trainer with animated propeller,
+     * landing gear, navigation lights, and glowing engine exhaust. */
     const g = new THREE.Group();
     g.name = 'aircraft';
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.45, metalness: 0.12 });
-    const wingMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, roughness: 0.35, metalness: 0.08 });
-    const tailMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.5, metalness: 0.1 });
-    const propMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.35, metalness: 0.15 });
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, roughness: 0.3, metalness: 0.1, emissive: 0x0e7490, emissiveIntensity: 0.2 });
+    const tailMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.45, metalness: 0.12 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6, metalness: 0.1 });
+    const propMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3, metalness: 0.4 });
     const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff2b4e });
+    const greenLightMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+    const exhaustMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.7 });
 
-    // Fuselage: stretched low-poly cylinder
-    const fus = new THREE.Mesh(new THREE.CylinderGeometry(9, 7, 52, 10, 1), bodyMat);
+    // Fuselage: tapered cylinder
+    const fus = new THREE.Mesh(new THREE.CylinderGeometry(8, 7, 54, 12, 1), bodyMat);
     fus.scale.set(0.9, 0.85, 1);
-    fus.rotation.z = Math.PI / 2; // axis along +X
+    fus.rotation.z = Math.PI / 2;
     g.add(fus);
-    // Cockpit canopy (subtle)
-    const canopy = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2), bodyMat);
-    canopy.position.set(4, 6.5, 0);
-    canopy.scale.set(0.9, 1.05, 0.9);
+
+    // Nose cone
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(5, 8, 8), darkMat);
+    nose.position.set(28, 0, 0);
+    nose.rotation.z = -Math.PI / 2;
+    g.add(nose);
+
+    // Cockpit canopy
+    const canopy = new THREE.Mesh(new THREE.SphereGeometry(7, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.1, metalness: 0.6, transparent: true, opacity: 0.7 }));
+    canopy.position.set(6, 7, 0);
+    canopy.scale.set(0.9, 1.0, 0.9);
     g.add(canopy);
 
-    // Wings: low-wing rectangle
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(52, 2.2, 22), wingMat);
-    wing.position.set(-4, 1.6, 0);
+    // Wings: tapered
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0);
+    wingShape.lineTo(30, 0);
+    wingShape.lineTo(32, 11);
+    wingShape.lineTo(-2, 11);
+    wingShape.lineTo(0, 0);
+    const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 1.8, bevelEnabled: false });
+    const wing = new THREE.Mesh(wingGeo, wingMat);
+    wing.position.set(-4, 0, 0);
     g.add(wing);
-    const wingTipL = new THREE.Mesh(new THREE.BoxGeometry(9, 1.9, 5), wingMat);
-    wingTipL.position.set(-4, 1.6, -12.5);
-    g.add(wingTipL);
-    wingTipL.position.set(-4, 1.6, 12.5);
-    g.add(wingTipL);
 
     // Horizontal stabilizer
-    const hStab = new THREE.Mesh(new THREE.BoxGeometry(13, 1.4, 11), tailMat);
-    hStab.position.set(-25, 2.4, 0);
+    const hStabShape = new THREE.Shape();
+    hStabShape.moveTo(0, 0);
+    hStabShape.lineTo(8, 0);
+    hStabShape.lineTo(9, 5);
+    hStabShape.lineTo(-1, 5);
+    hStabShape.lineTo(0, 0);
+    const hStabGeo = new THREE.ExtrudeGeometry(hStabShape, { depth: 1.2, bevelEnabled: false });
+    const hStab = new THREE.Mesh(hStabGeo, tailMat);
+    hStab.position.set(-27, 2, 0);
     g.add(hStab);
 
-    // Vertical stabilizer
-    const vStab = new THREE.Mesh(new THREE.BoxGeometry(9, 12, 2), tailMat);
-    vStab.position.set(-25, 9.5, 0);
+    // Vertical stabilizer with rudder
+    const vStabShape = new THREE.Shape();
+    vStabShape.moveTo(0, 0);
+    vStabShape.lineTo(8, 0);
+    vStabShape.lineTo(9, 12);
+    vStabShape.lineTo(-1, 10);
+    vStabShape.lineTo(0, 0);
+    const vStabGeo = new THREE.ExtrudeGeometry(vStabShape, { depth: 1.5, bevelEnabled: false });
+    const vStab = new THREE.Mesh(vStabGeo, tailMat);
+    vStab.position.set(-27, 2, -0.75);
     g.add(vStab);
 
-    // Prop disk
-    const prop = new THREE.Mesh(new THREE.CircleGeometry(11, 22), propMat);
-    prop.position.set(24, 0, 0);
-    prop.rotation.y = Math.PI / 2;
-    g.add(prop);
+    // Landing gear (main + nose)
+    const gearMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5, metalness: 0.6 });
+    // Main gear left
+    const mainL = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 8, 6), gearMat);
+    mainL.position.set(-2, -7, 8);
+    g.add(mainL);
+    const wheelL = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.6, 6, 12), darkMat);
+    wheelL.position.set(-2, -11, 8);
+    wheelL.rotation.y = Math.PI / 2;
+    g.add(wheelL);
+    // Main gear right
+    const mainR = mainL.clone();
+    mainR.position.set(-2, -7, -8);
+    g.add(mainR);
+    const wheelR = wheelL.clone();
+    wheelR.position.set(-2, -11, -8);
+    g.add(wheelR);
+    // Nose gear
+    const noseGear = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 5, 6), gearMat);
+    noseGear.position.set(20, -5, 0);
+    g.add(noseGear);
+    const wheelN = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.5, 6, 10), darkMat);
+    wheelN.position.set(20, -7.5, 0);
+    wheelN.rotation.y = Math.PI / 2;
+    g.add(wheelN);
 
-    // Red beacon (distinct in motion, mimics anti-collision)
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(2.6, 6, 6), beaconMat);
-    beacon.position.set(-25, 18, 0);
+    // Propeller hub
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 4, 8), darkMat);
+    hub.position.set(31, 0, 0);
+    hub.rotation.z = Math.PI / 2;
+    g.add(hub);
+
+    // Animated propeller (3 blades) — will be rotated in the loop
+    const propGroup = new THREE.Group();
+    propGroup.position.set(33, 0, 0);
+    for (let i = 0; i < 3; i++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.6, 22, 1.2), propMat);
+      blade.position.set(0, 0, 0);
+      blade.rotation.x = (i * Math.PI * 2) / 3;
+      propGroup.add(blade);
+    }
+    g.add(propGroup);
+    this._propGroup = propGroup;
+
+    // Engine exhaust glow
+    const exhaust = new THREE.Mesh(new THREE.SphereGeometry(2, 8, 8), exhaustMat);
+    exhaust.position.set(33, 0, 0);
+    g.add(exhaust);
+    this._exhaust = exhaust;
+
+    // Red beacon (top of vertical stab)
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(1.8, 6, 6), beaconMat);
+    beacon.position.set(-27, 14, 0);
     g.add(beacon);
+    this._beacon = beacon;
 
-    // Glow sprite so the plane is always visible at long zoom
+    // Green navigation light (right wingtip)
+    const navGreen = new THREE.Mesh(new THREE.SphereGeometry(1.2, 6, 6), greenLightMat);
+    navGreen.position.set(-4, 1.5, 12);
+    g.add(navGreen);
+    // Red navigation light (left wingtip)
+    const navRed = new THREE.Mesh(new THREE.SphereGeometry(1.2, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+    navRed.position.set(-4, 1.5, -12);
+    g.add(navRed);
+
+    // Glow sprite so the plane is always visible
     const glowTex = new THREE.CanvasTexture(this._makeBeaconCanvas());
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.9 }));
-    glow.scale.set(90, 90, 1);
-    glow.position.set(24, 3, 0);
+    glow.scale.set(110, 110, 1);
+    glow.position.set(33, 0, 0);
     g.add(glow);
 
     // Contrail (soft fade behind the plane)
@@ -2622,6 +2740,10 @@ class TerrainScene {
 
   clear() {
     this._planeGroup = null;
+    this._propGroup = null;
+    this._exhaust = null;
+    this._beacon = null;
+    this._water = null;
     this._contrail = null;
     this._contrailPoints = [];
     this._samplesSession = null;
@@ -2733,6 +2855,45 @@ class TerrainScene {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.root.add(mesh);
+
+    // Water surface for low terrain (animated waves)
+    const waterPositions = [];
+    const waterColors = [];
+    const waterIndices = [];
+    const waterSegs = 60;
+    for (let c = 0; c <= cols; c++) {
+      for (let r = 0; r <= 2; r++) {
+        const smp = columnSamples[c] || columnSamples[0];
+        const baseY = Math.max(0.5, 3 * 0.115 * (1 - r * 0.3));
+        waterPositions.push(c * HORIZ_SCALE, baseY, (r - 0.5) * LANE_WIDTH * 0.8);
+        // Deep blue water with slight variation
+        const depth = 0.3 + Math.sin(c * 0.5) * 0.1;
+        waterColors.push(0.05 * depth, 0.2 * depth, 0.5 * depth);
+      }
+    }
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < 2; r++) {
+        const a = r * (cols + 1) + c;
+        const b = a + 1;
+        const d = (r + 1) * (cols + 1) + c;
+        const e = d + 1;
+        waterIndices.push(a, d, b, b, d, e);
+      }
+    }
+    const waterGeo = new THREE.BufferGeometry();
+    waterGeo.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
+    waterGeo.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+    waterGeo.setIndex(waterIndices);
+    waterGeo.computeVertexNormals();
+    const waterMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.1, metalness: 0.8,
+      transparent: true, opacity: 0.7,
+      emissive: new THREE.Color('#0c4a6e'), emissiveIntensity: 0.3
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.position.y = -2;
+    this.root.add(water);
+    this._water = water;
 
     // Contour lines at 500 ft intervals
     this._addContours(columnSamples, HORIZ_SCALE, LANE_WIDTH, LANE_COUNT, cruiseY);
@@ -5269,7 +5430,16 @@ function openMinModal() {
 }
 function closeMinModal() { $('minModal').classList.add('hidden'); }
 
-$('minStamp')?.addEventListener('click', openMinModal);
+$('minStamp')?.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  ev.preventDefault();
+  openMinModal();
+});
+// also support touch/pointer
+$('minStamp')?.addEventListener('pointerdown', (ev) => {
+  ev.stopPropagation();
+  openMinModal();
+});
 $('minClose')?.addEventListener('click', closeMinModal);
 $('minSave')?.addEventListener('click', () => {
   minConfig = {
@@ -5331,28 +5501,65 @@ function wbCompute() {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
 
-    // Draw envelope
+    // Find actual CG and weight ranges from envelope
+    const env = res.envelope || [];
+    if (env.length < 3) {
+      out.innerHTML = `<span class="text-rose-300">No envelope data</span>`;
+      return;
+    }
+    const cgVals = env.map(e => e[0]);
+    const wVals = env.map(e => e[1]);
+    const cgMin = Math.min(...cgVals) - 2;
+    const cgMax = Math.max(...cgVals) + 2;
+    const wMin = Math.min(...wVals) - 100;
+    const wMax = Math.max(...wVals) + 100;
+    const cgRange = cgMax - cgMin;
+    const wRange = wMax - wMin;
+
+    // Draw background grid
     ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
+    ctx.fillStyle = 'rgba(15,23,42,0.5)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(71,85,105,0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 1; i < 8; i++) {
+      const x = (i / 8) * W;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let i = 1; i < 6; i++) {
+      const y = (i / 6) * H;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Draw envelope polygon
+    const pts = env.map(([cg, maxW]) => [
+      ((cg - cgMin) / cgRange) * W,
+      H - ((maxW - wMin) / wRange) * H
+    ]);
     ctx.beginPath();
-    const pts = res.envelope.map(([cg, maxW]) => {
-      const x = ((cg + 10) / 20) * W;
-      const y = H - ((maxW - 1500) / 1200) * H;
-      return [x, y];
-    });
     pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
     ctx.closePath();
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(245,158,11,0.08)';
+    ctx.fillStyle = 'rgba(245,158,11,0.15)';
     ctx.fill();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
 
     // Draw CG point
-    const cgX = ((res.takeoff_cg_in + 10) / 20) * W;
-    const cgY = H - ((res.gross_weight_lb - 1500) / 1200) * H;
+    const cgX = ((res.takeoff_cg_in - cgMin) / cgRange) * W;
+    const cgY = H - ((res.gross_weight_lb - wMin) / wRange) * H;
+    // Glow
+    const glow = ctx.createRadialGradient(cgX, cgY, 0, cgX, cgY, 20);
+    glow.addColorStop(0, res.in_envelope ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cgX - 20, cgY - 20, 40, 40);
+    // Point
     ctx.fillStyle = res.in_envelope ? '#22c55e' : '#ef4444';
     ctx.beginPath();
-    ctx.arc(cgX, cgY, 8, 0, Math.PI * 2);
+    ctx.arc(cgX, cgY, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
@@ -5360,27 +5567,37 @@ function wbCompute() {
 
     // Labels
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '11px monospace';
+    ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('CG (in)', W / 2, H - 4);
     ctx.save();
-    ctx.translate(10, H / 2);
+    ctx.translate(12, H / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('Weight (lb)', 0, 0);
     ctx.restore();
 
+    // Axis tick labels
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(cgMin.toFixed(0), 20, H - 4);
+    ctx.fillText(cgMax.toFixed(0), W - 20, H - 4);
+    ctx.textAlign = 'right';
+    ctx.fillText(wMax.toFixed(0), W - 4, 12);
+    ctx.fillText(wMin.toFixed(0), W - 4, H - 4);
+
     out.innerHTML = `
       <div class="flex justify-between">
-        <span>Gross weight:</span><span class="text-amber-200">${res.gross_weight_lb.toLocaleString()} lb</span>
+        <span>Gross weight:</span><span class="text-amber-200 font-bold">${res.gross_weight_lb.toLocaleString()} lb</span>
       </div>
       <div class="flex justify-between">
-        <span>Takeoff CG:</span><span class="text-cyan-200">${res.takeoff_cg_in.toFixed(1)} in</span>
+        <span>Takeoff CG:</span><span class="text-cyan-200 font-bold">${res.takeoff_cg_in.toFixed(1)} in</span>
       </div>
       <div class="flex justify-between">
         <span>Zero-fuel CG:</span><span class="text-slate-400">${res.zero_fuel_cg_in.toFixed(1)} in</span>
       </div>
       <div class="flex justify-between">
-        <span>Envelope:</span><span class="${res.in_envelope ? 'text-emerald-300' : 'text-rose-300'}">${res.in_envelope ? '✓ IN' : '✗ OUT'}</span>
+        <span>Envelope:</span><span class="${res.in_envelope ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}">${res.in_envelope ? '✓ IN ENVELOPE' : '✗ OUT OF ENVELOPE'}</span>
       </div>
     `;
   }).catch(err => {
@@ -5995,8 +6212,8 @@ $('briefChips')?.addEventListener('click', (ev) => {
 
 function openWxDrawer() {
   const d = $('wxDrawer');
+  if (!d) return;
   d.classList.remove('hidden');
-  d.classList.add('flex');
   if (!wxDrawerLoaded) {
     wxDrawerLoaded = true;
     loadAirportBrief();
@@ -6005,14 +6222,22 @@ function openWxDrawer() {
 }
 function closeWxDrawer() {
   const d = $('wxDrawer');
+  if (!d) return;
   d.classList.add('hidden');
-  d.classList.remove('flex');
 }
-$('wxDrawerToggle')?.addEventListener('click', () => {
-  $('wxDrawer').classList.contains('hidden') ? openWxDrawer() : closeWxDrawer();
+$('wxDrawerToggle')?.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const d = $('wxDrawer');
+  if (!d) return;
+  if (d.classList.contains('hidden')) {
+    openWxDrawer();
+  } else {
+    closeWxDrawer();
+  }
 });
 $('wxDrawerClose')?.addEventListener('click', closeWxDrawer);
-$('wxDrawerFromLog')?.addEventListener('click', openWxDrawer);
+$('wxDrawerFromLog')?.addEventListener('click', (ev) => { ev.stopPropagation(); openWxDrawer(); });
 
 async function sigwxGo(ambito, dia) {
   if (sigwxBusy) return;
