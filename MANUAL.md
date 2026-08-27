@@ -172,6 +172,10 @@ quick-set chips (2500 / 3500 / 4500 / 6500 / 9500) above the slider.
 | Emergency card | **SOS** | Emergency |
 | Dead-reckon after GPS loss | automatic banner | GPS failure |
 | Terrain profile in 3D | Terrain panel → **CORRIDOR** | Pre-flight |
+| **Personal minimums check** | BRIEF tab → GO/CAUTION/NOGO stamp | Pre-flight |
+| **Weight & Balance** | Composer → WEIGHT & BALANCE section | Pre-flight |
+| **Stabilized approach siren** | automatic in FINAL mode below 600 AGL | Final |
+| **Fuel danger banner** | automatic in FLY HUD when low | En route |
 
 ---
 
@@ -340,6 +344,36 @@ your recorded track as GPX after a flight.
   that flies with you — no separate scoring model, no LLM in the loop. Inject
   timing is fixed per scenario so runs are repeatable.
 
+### 4.11 Personal minimums — the GO/CAUTION/NOGO stamp
+
+* **Where:** the big stamp at the top of the BRIEF tab, plus a modal editor.
+* **When:** before every flight. The stamp is your first and last check before
+  committing to a departure time.
+* **How:**
+  * The stamp shows **GO — CHECK BEFORE LIFTOFF** (green), **CAUTION** (amber),
+    or **NOGO** (red) based on your configured minimums vs live METAR.
+  * Tap the stamp to open the editor: min ceiling, min visibility, max
+    crosswind, max wind, night OK. Defaults to certified VFR minimums.
+  * The verdict rebuilds from live METAR categories (VFR/MVFR/IFR/LIFR) and
+    wind limits every time you compute a route or press CHECK NOW.
+  * Persists in localStorage — your rules survive restarts.
+* **Behind it:** `/api/minimums/go` evaluates the verdict server-side using
+  NOAA AWC METAR categories and wind limits. The PIC always decides; this is
+  a hard nudge, not an autopilot.
+
+### 4.12 Weight & Balance — POH envelope visual
+
+* **Where:** the WEIGHT & BALANCE section in the composer (below PERFORMANCE).
+* **When:** every time you load the aircraft differently — passengers, baggage,
+  fuel — to confirm you're within the POH envelope.
+* **How:**
+  * Set basic empty weight and CG arm (defaults to C172: 1680 lb, 39.5 in).
+  * Adjust pilot, passenger, baggage weights and fuel with sliders.
+  * The canvas draws the POH envelope polygon and your CG point (green = in,
+    red = out). Numbers show gross weight, takeoff CG, zero-fuel CG.
+* **Behind it:** `/api/wb/compute` computes moments and envelope intersection
+  server-side. The envelope polygon is configurable per aircraft type.
+
 ---
 
 ## 5. On the ground
@@ -406,6 +440,20 @@ FINAL** best-wind-end approach guidance.
   **EXIT** returns the full UI. A translucent corridor paints along your track
   while flying; an aircraft icon replaces the breadcrumb dot when moving.
 
+### 6.5 Fuel danger banner — "RESERVE 30 MIN · LOW FUEL"
+
+* **Where:** the HUD, below the waypoint line, in FLY mode.
+* **When:** whenever remaining fuel drops below 30 minutes of reserve.
+* **How:**
+  * The banner computes remaining fuel from your burn rate (GPH) and the
+    ghost flyer's remaining time. When it drops below 30 min: **amber**
+    "RESERVE 30 MIN · LOW FUEL".
+  * When it hits zero: **red** "FUEL EXHAUSTED — LAND NOW".
+  * The banner is unignoreable — it stays until you land or refuel.
+* **Behind it:** driven by the same point-mass kinematics as the ghost flyer;
+  the burn rate comes from your composer input. Fuel exhaustion is political/
+  habitual, not technical — this banner makes it impossible to miss.
+
 ---
 
 ## 7. Approach & landing
@@ -438,6 +486,23 @@ What you get, refreshed twice a second:
 
 **What it is NOT:** an ILS. Geometry from GPS against published data with no
 integrity channel — PAPI semantics you already know how to read, nothing more.
+
+### 7.3 Stabilized approach siren — "UNSTABILIZED. GO AROUND."
+
+* **Where:** automatic in FINAL mode, below 600 ft AGL.
+* **When:** the last 500 ft of every approach — where most loss-of-control
+  accidents happen.
+* **How:**
+  * Every 500 ms the system evaluates: speed within 15 % of target (65 kt
+    baseline), bank < 15°, lateral deviation < 0.3 NM at 500 AGL / < 0.5 NM
+    at 300 AGL, descent rate < 1,500 fpm.
+  * On violation: voice **"UNSTABILIZED. UNSTABILIZED. GO AROUND."** + PAPI
+    lights strobe red + toast. Edge-triggered so it fires once per gate, not
+    continuously.
+  * The siren uses the same deterministic criteria as the landing performance
+    card — no separate model.
+* **Behind it:** `/api/final/stabilized` computes the gate server-side to
+  avoid JS floating-point edge cases near the airport.
 
 ### 7.2 Camera view — experimental
 * **Where:** CAMERA VIEW button inside the FINAL panel.
@@ -510,6 +575,16 @@ Legend: **green VFR · blue MVFR · red IFR** (bottom-centre pill).
   sun-accurate lighting for your departure time, live progress marker in
   flight. Drag orbit / right-drag pan / wheel zoom. EXIT restores the panel.
 
+  **The aircraft:** a procedural low-wing trainer (fuselage, wings, stabilizers,
+  prop disk, red beacon, glow sprite, contrail) rides the route with
+  glide-slope pitch. The beacon turns red when the plane approaches terrain
+  breach sectors. The contrail fades behind for motion sense. The plane is
+  decorative — it does not affect the physics.
+
+  **Terrain fidelity:** elevation-colored gradient (low = dark blue, high =
+  green), breach sectors highlighted in red, translucent safety ceiling at
+  cruise + 1,000 ft, departure/arrival pillars, waypoint gates with labels.
+
 ### 10.2 EARTH — great-circle globe
 * **Where:** 🌐 chip (header) or EARTH button (Terrain panel).
 * **When:** briefing the shape of the journey; admiring the planet.
@@ -559,6 +634,10 @@ altitude feeding Night check, Guardian and FINAL callouts.
 | NOTAMs | ENAIRE FeatureServer | 300 s bbox | error toast |
 | Radar | RainViewer public API | 5-min frames | toast |
 | Traffic | OpenSky public ADS-B | none (30 s poll) | silent — no dots, no false comfort |
+| Personal minimums | `/api/minimums/go` (server-side METAR evaluation) | none (fresh) | verdict unavailable → stamp shows "MINIMUMS CHECK UNAVAILABLE" |
+| Weight & Balance | `/api/wb/compute` (POH envelope math) | none (fresh) | W&B unavailable → section shows error |
+| Stabilized approach | `/api/final/stabilized` (gate criteria) | none (fresh) | siren silent offline — no false comfort |
+| Fuel danger banner | computed from composer burn rate + ghost flyer remaining time | none (fresh) | banner hidden if no route computed |
 | Magnetic variation | WMM2020 transliteration | n/a | n/a (100 % of NOAA test vectors) |
 | Solar position | NOAA algorithm | n/a | n/a |
 
@@ -603,6 +682,13 @@ telemetry, no accounts.
 | Stale build stamp after update | Templates hot-reload but Python doesn't — restart uvicorn. |
 | Voice callouts silent | Arm once via ENABLE VOICE CALLOUTS (iOS gesture rule); low calls suppress when vertical accuracy >±12 m — shown live in-panel. |
 | Traffic shows nothing | Coverage/rate-limit reality; advisory layer only. |
+| Minimums stamp shows "UNAVAILABLE" | METAR fetch failed for departure/arrival. Check network, then tap the stamp → CHECK NOW. |
+| Stabilized siren silent | FINAL mode not armed, or above 600 AGL, or GPS vertical accuracy >±12 m (suppression rule). |
+| W&B canvas blank | No route computed yet, or the `/api/wb/compute` endpoint unreachable. Check server log. |
+| Fuel banner never appears | No route computed, or burn rate is zero. Enter a realistic GPH in the composer. |
+| 3D plane invisible in corridor | Plane only appears when a route is computed and the corridor is open. Check the CORRIDOR button. |
+| Contrail not showing | Contrail only appears when the plane is moving (progress fraction changes). |
+| Beacon not red near terrain | Breach detection needs the terrain profile loaded — compute a route first. |
 | Want to re-enable every tool tip | Clear the `tooltips.dismissed` key in browser DevTools → Application → Local Storage, or paste `localStorage.removeItem('tooltips.dismissed'); location.reload();` in the console. |
 | Want to re-enable one specific tool tip | Open the Tool Directory (`?`) and scroll to the chip's section, or click the chip once — the tip will pop if not previously dismissed. |
 

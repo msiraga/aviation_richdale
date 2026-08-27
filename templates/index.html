@@ -371,6 +371,14 @@ tailwind.config = {
       <div class="pt-1"><dt class="inline font-bold text-white">DR banner&nbsp;</dt><dd class="inline">appears automatically if GPS degrades with a route active — shows last HDG/GS.</dd></div>
     </dl>
 
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300 mt-5 mb-1">Safety systems (new)</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">Personal minimums&nbsp;</dt><dd class="inline">the GO/CAUTION/NOGO stamp on the BRIEF tab. Tap it to edit your rules (ceiling, visibility, crosswind, wind, night). The verdict rebuilds from live METAR every time you compute a route. Persists in localStorage.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Stabilized approach siren&nbsp;</dt><dd class="inline">in FINAL mode below 600 AGL, the system checks speed, bank, alignment and descent rate every 500 ms. On violation: voice "UNSTABILIZED. UNSTABILIZED. GO AROUND." + PAPI lights strobe red + toast. Edge-triggered so it doesn't spam.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Weight &amp; Balance&nbsp;</dt><dd class="inline">composer section with POH envelope canvas, sliders for pilot/passenger/baggage/fuel, and live CG computation. Green dot = in envelope, red = out. Defaults to C172.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Fuel danger banner&nbsp;</dt><dd class="inline">HUD banner appears when remaining fuel drops below 30 minutes reserve. Amber "RESERVE 30 MIN · LOW FUEL" → red "FUEL EXHAUSTED — LAND NOW" when empty.</dd></div>
+    </dl>
+
     <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mt-5 mb-1">Modals &amp; viewers</h3>
     <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
       <div class="pt-1"><dt class="inline font-bold text-white">Lightbox&nbsp;</dt><dd class="inline">click any chart image to open it full-screen. Wheel / +/- to zoom, drag to pan, 0 to reset, ESC or X to close. Works on every sigwx, analysis, forecast map and 6-hourly Spain sigwx image.</dd></div>
