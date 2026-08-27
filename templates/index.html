@@ -713,6 +713,16 @@ tailwind.config = {
   </div>
 </div>
 
+<div id="navLogModal" class="hidden fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="glass w-[720px] max-w-full max-h-[90vh] overflow-y-auto p-5 flex flex-col gap-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Nav Log — full view</h2>
+      <button id="navLogClose" class="chip px-3 py-1 text-xs">CLOSE</button>
+    </div>
+    <div id="navLogModalBody" class="space-y-3"></div>
+  </div>
+</div>
+
 <div id="minModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
   <div class="glass w-[520px] max-w-full max-h-[86vh] overflow-y-auto p-5 flex flex-col gap-3">
     <div class="flex items-center justify-between">
@@ -921,8 +931,8 @@ tailwind.config = {
         <input id="wbFuel" type="range" min="0" max="120" step="1" value="40"
                class="w-full accent-amber-400">
         <div id="wbResult" class="text-[11px] font-mono text-slate-300"></div>
-        <div id="wbEnvelope" class="hidden">
-          <canvas id="wbCanvas" width="320" height="200" class="w-full rounded-lg bg-black/30"></canvas>
+        <div id="wbEnvelope">
+          <canvas id="wbCanvas" width="400" height="260" class="w-full rounded-lg bg-black/30"></canvas>
         </div>
       </div>
 
@@ -957,7 +967,10 @@ tailwind.config = {
   <section id="resultsPanel" class="glass p-5 grow overflow-y-auto min-h-0 hidden">
     <div class="flex items-baseline justify-between sticky -top-5 -mt-5 pt-5 pb-2 bg-transparent z-10">
       <h2 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Nav Log</h2>
-      <span class="text-[10px] font-mono text-slate-500">E6B CORE</span>
+      <div class="flex gap-2">
+        <button id="navLogPop" class="chip px-2.5 py-1 text-[10px] font-bold text-cyan-200 hover:bg-cyan-400/20 transition" title="pop the nav log to the center of the screen">POP OUT</button>
+        <span class="text-[10px] font-mono text-slate-500">E6B CORE</span>
+      </div>
     </div>
 
     <div id="briefTabs" class="flex gap-1 mb-3">
@@ -1040,9 +1053,9 @@ tailwind.config = {
       <div id="notamList" class="glass p-3 rounded-xl border border-orange-400/20 max-h-[calc(100vh-320px)] overflow-y-auto"></div>
     </div>
 
-    <!-- LOG: full leg table -->
+    <!-- LOG: full leg table + itinerary list -->
     <div id="tab-legs" class="hidden">
-      <div class="overflow-x-auto rounded-xl border border-white/5">
+      <div class="overflow-x-auto rounded-xl border border-white/5 mb-3">
         <table class="w-full text-[11px] font-mono">
           <thead>
             <tr class="bg-white/5 text-[9px] uppercase tracking-wider text-slate-400">
@@ -1059,6 +1072,8 @@ tailwind.config = {
           <tbody id="legsBody" class="divide-y divide-white/5 text-slate-200"></tbody>
         </table>
       </div>
+      <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300 mb-2">Itinerary</div>
+      <div id="itineraryList" class="space-y-1.5"></div>
     </div>
 
     <p class="mt-3 text-[10px] leading-relaxed text-slate-500">
@@ -2140,6 +2155,21 @@ altSlider.addEventListener('input', () => {
 });
 altSlider.dispatchEvent(new Event('input'));
 
+$('navLogPop')?.addEventListener('click', () => {
+  const modal = $('navLogModal');
+  const body = $('navLogModalBody');
+  // Clone the nav log content into the modal
+  body.innerHTML = $('resultsPanel').innerHTML;
+  // Remove the pop-out button from the clone to avoid recursion
+  const clonePop = body.querySelector('#navLogPop');
+  if (clonePop) clonePop.remove();
+  modal.classList.remove('hidden');
+});
+$('navLogClose')?.addEventListener('click', () => $('navLogModal').classList.add('hidden'));
+$('navLogModal')?.addEventListener('click', (ev) => {
+  if (ev.target === $('navLogModal')) $('navLogModal').classList.add('hidden');
+});
+
 /* ------------------------------ nav log flow ------------------------------ */
 
 const form = $('routeForm');
@@ -2208,7 +2238,11 @@ function presentNavLog(data) {
 
   const legsBody = $('legsBody');
   legsBody.innerHTML = '';
+  const itineraryList = $('itineraryList');
+  itineraryList.innerHTML = '';
+  let cumEte = 0;
   data.legs.forEach(leg => {
+    cumEte += leg.ete_min;
     const windTxt = leg.wind?.provider === 'none'
       ? 'CALM/—'
       : `${Math.round(leg.wind.wind_from_deg_true)}°/${Math.round(leg.wind.wind_speed_kt)}kt`;
@@ -2223,6 +2257,24 @@ function presentNavLog(data) {
       <td class="px-2 py-2 text-right">${leg.ete_min.toFixed(0)}m</td>
       <td class="px-2 py-2 text-right">${leg.fuel_gal.toFixed(1)}</td>`;
     legsBody.appendChild(row);
+
+    // Itinerary card per leg
+    const card = el('div', 'rounded-lg border border-white/10 bg-white/[0.03] p-2.5');
+    const eta = new Date(Date.now() + cumEte * 60000);
+    const etaStr = eta.toISOString().substr(11, 5) + 'Z';
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-1">
+        <span class="font-bold text-cyan-200 text-[12px]">${leg.from} → ${leg.to}</span>
+        <span class="text-[10px] text-slate-500">ETA ${etaStr}</span>
+      </div>
+      <div class="grid grid-cols-4 gap-1 text-[10px] font-mono">
+        <div><span class="text-slate-500">ETE</span> <span class="text-emerald-300">${leg.ete_min.toFixed(0)}m</span></div>
+        <div><span class="text-slate-500">GS</span> <span class="text-emerald-300">${leg.ground_speed_kt.toFixed(0)}kt</span></div>
+        <div><span class="text-slate-500">WIND</span> <span class="text-sky-300">${windTxt}</span></div>
+        <div><span class="text-slate-500">FUEL</span> <span class="text-violet-300">${leg.fuel_gal.toFixed(1)}</span></div>
+      </div>
+    `;
+    itineraryList.appendChild(card);
   });
 
   const warnSlot = $('warningsSlot');
@@ -2262,20 +2314,32 @@ class TerrainScene {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(52, 1, 1, 60000);
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
 
-    this.scene.add(new THREE.AmbientLight(0xbfd8ff, 0.85));
-    const sun = new THREE.DirectionalLight(0xfff4de, 1.05);
+    // Lighting: ambient + sun + rim + fill
+    this.scene.add(new THREE.AmbientLight(0x1a2a4a, 0.6));
+    const sun = new THREE.DirectionalLight(0xfff4de, 1.2);
     sun.position.set(-600, 900, 400);
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
     this.scene.add(sun);
     this.sunLight = sun;
-    const rim = new THREE.DirectionalLight(0x22d3ee, 0.35);
+    const rim = new THREE.DirectionalLight(0x22d3ee, 0.4);
     rim.position.set(500, 200, -600);
     this.scene.add(rim);
+    const fill = new THREE.DirectionalLight(0x3b82f6, 0.2);
+    fill.position.set(-300, 100, 300);
+    this.scene.add(fill);
+
+    // Fog for depth
+    this.scene.fog = new THREE.FogExp2(0x0a0f1a, 0.00008);
 
     this.spherical = { theta: -0.9, phi: 1.02 };
     this.distance = 2600;
@@ -2586,10 +2650,10 @@ class TerrainScene {
 
     const HORIZ_SCALE = 90;
     const VERT_SCALE = 0.115;
-    const LANE_COUNT = 7;
+    const LANE_COUNT = 9; // more lanes for smoother terrain
     const LANE_WIDTH = 340;
 
-    const cols = Math.min(samples.length, 110);
+    const cols = Math.min(samples.length, 140); // more columns for detail
     const stride = (samples.length - 1) / (cols - 1);
     const columnSamples = [];
     for (let c = 0; c < cols; c++) columnSamples.push(samples[Math.round(c * stride)]);
@@ -2598,10 +2662,15 @@ class TerrainScene {
     const colors = [];
     const indices = [];
     const cruiseY = profile.cruise_altitude_ft * VERT_SCALE;
-    const lowColor = new THREE.Color('#16283f');
-    const midColor = new THREE.Color('#134e4a');
-    const highColor = new THREE.Color('#34d399');
-    const breachColor = new THREE.Color('#ff2b4e');
+
+    // Rich color palette: deep ocean → forest → mountain → snow
+    const lowColor = new THREE.Color('#0c1445');    // deep ocean
+    const midLowColor = new THREE.Color('#134e4a'); // forest
+    const midColor = new THREE.Color('#166534');    // green
+    const midHighColor = new THREE.Color('#65a30d'); // yellow-green
+    const highColor = new THREE.Color('#a3e635');   // bright green
+    const peakColor = new THREE.Color('#f8fafc');   // snow
+    const breachColor = new THREE.Color('#ff2b4e'); // breach red
 
     const breachSet = new Set(profile.breach_indices);
     const sampleIndexOfColumn = [];
@@ -2620,9 +2689,19 @@ class TerrainScene {
         const y = Math.max(2, smp.terrain_ft * VERT_SCALE * domeFall);
         positions.push(c * HORIZ_SCALE, y, laneT * LANE_WIDTH);
 
-        const tNorm = Math.min(1, Math.max(0, smp.terrain_ft / 4200));
-        if (tNorm < 0.5) tmpColor.copy(lowColor).lerp(midColor, tNorm * 2);
-        else tmpColor.copy(midColor).lerp(highColor, (tNorm - 0.5) * 2);
+        // Rich gradient: 0-1000ft ocean, 1000-3000ft forest, 3000-6000ft mountain, 6000+ snow
+        const t = smp.terrain_ft;
+        if (t < 1000) {
+          tmpColor.copy(lowColor).lerp(midLowColor, t / 1000);
+        } else if (t < 3000) {
+          tmpColor.copy(midLowColor).lerp(midColor, (t - 1000) / 2000);
+        } else if (t < 6000) {
+          tmpColor.copy(midColor).lerp(midHighColor, (t - 3000) / 3000);
+        } else if (t < 9000) {
+          tmpColor.copy(midHighColor).lerp(highColor, (t - 6000) / 3000);
+        } else {
+          tmpColor.copy(highColor).lerp(peakColor, Math.min(1, (t - 9000) / 3000));
+        }
 
         const isBreach = breachSet.has(sampleIndexOfColumn[c]);
         if (isBreach) tmpColor.lerp(breachColor, 0.92);
@@ -2647,15 +2726,21 @@ class TerrainScene {
     geo.computeVertexNormals();
 
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.86, metalness: 0.08,
+      vertexColors: true, roughness: 0.75, metalness: 0.05,
       flatShading: false, side: THREE.DoubleSide,
-      emissive: new THREE.Color('#20060a'), emissiveIntensity: 0.0
+      emissive: new THREE.Color('#0a0f1a'), emissiveIntensity: 0.1
     }));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     this.root.add(mesh);
 
+    // Contour lines at 500 ft intervals
+    this._addContours(columnSamples, HORIZ_SCALE, LANE_WIDTH, LANE_COUNT, cruiseY);
+
+    // Safety ceiling plane with better visibility
     const planeGeo = new THREE.PlaneGeometry((cols - 1) * HORIZ_SCALE + 160, LANE_WIDTH + 160);
     const planeMat = new THREE.MeshBasicMaterial({
-      color: 0x38e1ff, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false
+      color: 0x38e1ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false
     });
     const safetyPlane = new THREE.Mesh(planeGeo, planeMat);
     safetyPlane.rotation.x = -Math.PI / 2;
@@ -2664,15 +2749,16 @@ class TerrainScene {
 
     const edgeGeo = new THREE.EdgesGeometry(planeGeo);
     const edgeLines = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({
-      color: 0x7df0ff, transparent: true, opacity: 0.75
+      color: 0x7df0ff, transparent: true, opacity: 0.6
     }));
     edgeLines.rotation.x = -Math.PI / 2;
     edgeLines.position.copy(safetyPlane.position);
     this.root.add(edgeLines);
 
+    // Departure/arrival pillars with glow
     const depPillar = new THREE.Mesh(
       new THREE.CylinderGeometry(9, 9, cruiseY, 14),
-      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.35 })
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.4 })
     );
     depPillar.position.set(0, cruiseY / 2, -LANE_WIDTH / 2 - 40);
     this.root.add(depPillar);
@@ -2681,12 +2767,60 @@ class TerrainScene {
     arrPillar.position.set((cols - 1) * HORIZ_SCALE, cruiseY / 2, LANE_WIDTH / 2 + 40);
     this.root.add(arrPillar);
 
+    // Add glow sprites to pillars
+    const depGlow = this._makeGlowSprite(0x22d3ee);
+    depGlow.position.set(0, cruiseY + 20, -LANE_WIDTH / 2 - 40);
+    this.root.add(depGlow);
+    const arrGlow = this._makeGlowSprite(0xa78bfa);
+    arrGlow.position.set((cols - 1) * HORIZ_SCALE, cruiseY + 20, LANE_WIDTH / 2 + 40);
+    this.root.add(arrGlow);
+
     const spanX = (cols - 1) * HORIZ_SCALE;
     this._spanX = spanX; this._cruiseY = cruiseY; this._laneWidth = LANE_WIDTH;
     this.target.set(spanX / 2, Math.max(cruiseY * 0.55, 160), 0);
     this.distance = Math.max(2400, spanX * 0.85);
     this.spherical.theta = -0.95;
     this.spherical.phi = 0.98;
+  }
+
+  _addContours(samples, HORIZ_SCALE, LANE_WIDTH, LANE_COUNT, cruiseY) {
+    // Contour lines at 500 ft intervals
+    const contourLevels = [500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000];
+    const contourMat = new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.3 });
+
+    for (const level of contourLevels) {
+      const levelY = level * 0.115;
+      if (levelY > cruiseY * 1.5) continue; // skip contours above cruise
+      const points = [];
+      for (let c = 0; c < samples.length; c++) {
+        const smp = samples[c];
+        const y = smp.terrain_ft * 0.115;
+        if (Math.abs(y - levelY) < 3) {
+          points.push(new THREE.Vector3(c * HORIZ_SCALE, y, 0));
+        }
+      }
+      if (points.length > 1) {
+        const geo = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geo, contourMat);
+        this.root.add(line);
+      }
+    }
+  }
+
+  _makeGlowSprite(color) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+    g.addColorStop(0, `rgba(${(color >> 16) & 255},${(color >> 8) & 255},${color & 255},0.8)`);
+    g.addColorStop(0.5, `rgba(${(color >> 16) & 255},${(color >> 8) & 255},${color & 255},0.3)`);
+    g.addColorStop(1, `rgba(${(color >> 16) & 255},${(color >> 8) & 255},${color & 255},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.8 }));
+    spr.scale.set(60, 60, 1);
+    return spr;
   }
 }
 
@@ -5193,7 +5327,6 @@ function wbCompute() {
 
   api('/api/wb/compute', { method: 'POST', body }).then(res => {
     const out = $('wbResult');
-    const env = $('wbEnvelope');
     const canvas = $('wbCanvas');
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
@@ -5219,15 +5352,15 @@ function wbCompute() {
     const cgY = H - ((res.gross_weight_lb - 1500) / 1200) * H;
     ctx.fillStyle = res.in_envelope ? '#22c55e' : '#ef4444';
     ctx.beginPath();
-    ctx.arc(cgX, cgY, 6, 0, Math.PI * 2);
+    ctx.arc(cgX, cgY, 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
     // Labels
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px monospace';
+    ctx.font = '11px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('CG (in)', W / 2, H - 4);
     ctx.save();
@@ -5250,9 +5383,16 @@ function wbCompute() {
         <span>Envelope:</span><span class="${res.in_envelope ? 'text-emerald-300' : 'text-rose-300'}">${res.in_envelope ? '✓ IN' : '✗ OUT'}</span>
       </div>
     `;
-    env.classList.remove('hidden');
   }).catch(err => {
     $('wbResult').innerHTML = `<span class="text-rose-300">W&B unavailable: ${err.message}</span>`;
+    // Still show the canvas with a placeholder
+    const canvas = $('wbCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#334155';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('W&B unavailable', canvas.width / 2, canvas.height / 2);
   });
 }
 
