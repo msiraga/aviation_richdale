@@ -1244,7 +1244,9 @@ async def get_sigwx_es():
     """Spain significant-weather chart PNG (AEMET-fed, refreshed ~6 h upstream).
 
     Served through our cache so the browser never hotlinks and mixed-content
-    never bites. 90-minute TTL matches the upstream refresh cadence.
+    never bites. 90-minute TTL matches the upstream refresh cadence; if the
+    upstream goes empty we keep serving the last good chart instead of going
+    dark.
     """
     import time as _time
     cache = DATA_DIR / "cache" / "aemet"
@@ -1253,15 +1255,23 @@ async def get_sigwx_es():
     if fp.is_file() and _time.time() - fp.stat().st_mtime < 5400:
         return Response(content=fp.read_bytes(), media_type="image/png")
     url = "https://www.aerbrava.com/im/imcomp/sigesp.png"
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        r = await client.get(url)
-        if r.status_code != 200 or len(r.content) < 1000:
-            raise BadRequest(f"chart source returned HTTP {r.status_code}")
-        ct = r.headers.get("content-type", "")
-        if not ct.startswith("image/"):
-            raise BadRequest("chart source did not return an image")
-        fp.write_bytes(r.content)
-    return Response(content=fp.read_bytes(), media_type="image/png")
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True,
+                                     headers={
+                                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                                         "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                                         "Accept-Language": "en-GB,en;q=0.9,es;q=0.8",
+                                         "Referer": "https://www.aerbrava.com/en/meteo/spain-significant-weather-chart/",
+                                     }) as client:
+            r = await client.get(url)
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/") and len(r.content) > 1000:
+                fp.write_bytes(r.content)
+                return Response(content=fp.read_bytes(), media_type="image/png")
+    except httpx.HTTPError:
+        pass
+    if fp.is_file():
+        return Response(content=fp.read_bytes(), media_type="image/png")
+    raise BadRequest("chart source empty and no cached copy available yet")
 
 
 @app.get("/api/aemet/image")
@@ -1659,6 +1669,58 @@ async def get_aip_ad2(icao: str, force_refresh: bool = False):
     snapshot = await app.state.enaire.get_ad2(icao, force_refresh=force_refresh)
     _index_reporting_points(snapshot, icao.upper())
     return ok_payload({"ad2": snapshot})
+
+
+@app.get("/api/airport/dossier/{icao}")
+async def get_airport_dossier(icao: str):
+    """Compact briefing packet for an aerodrome: AD2 fields + nearby NOTAMs.
+
+    NOTAMs are fetched with a 5 NM radius around the airport, then filtered
+    to those whose text mentions the ICAO. This is the panel behind the
+    airport dossier lightbox.
+    """
+    icao = icao.upper()
+    ad2 = await app.state.enaire.get_ad2(icao)
+    _index_reporting_points(ad2, icao)
+    freqs = {fa.service: fa.frequency_mhz for fa in (ad2.frequencies or [])}
+    runways = sorted({r.designation for r in (ad2.runways or [])})
+    reporting_points = sorted({rp.name for rp in (ad2.reporting_points or [])})
+    notams: list[dict[str, Any]] = []
+    if ad2.arp_latitude is not None and ad2.arp_longitude is not None:
+        pad = 0.1  # ~6 NM latitude padding
+        south, west = ad2.arp_latitude - pad, ad2.arp_longitude - pad
+        north, east = ad2.arp_latitude + pad, ad2.arp_longitude + pad
+        try:
+            raw = await app.state.notam.query(south, west, north, east)
+            for n in raw:
+                if n.get("expired"):
+                    continue
+                text = " ".join([
+                    n.get("raw", ""), n.get("location", ""),
+                    n.get("description", "") or "", str(n.get("properties") or ""),
+                ]).upper()
+                if icao in text or n.get("location", "").upper() == icao:
+                    notams.append(n)
+        except Exception as exc:  # noqa: BLE001 - explicit degradation
+            log.warning("notam fetch for dossier %s failed: %s", icao, exc)
+    return ok_payload({
+        "icao": icao,
+        "ad2": {
+            "icao": ad2.icao,
+            "name": ad2.aerodrome_name,
+            "arp_latitude": ad2.arp_latitude,
+            "arp_longitude": ad2.arp_longitude,
+            "transition_altitude_ft": ad2.transition_altitude_ft,
+            "transition_level_ft": ad2.transition_level_ft,
+            "frequencies": freqs,
+            "runways": runways,
+            "reporting_points": reporting_points,
+            "vac_url": ad2.vac_url,
+            "source_url": ad2.source_url,
+        },
+        "notams": notams,
+        "notam_count": len(notams),
+    })
 
 
 @app.post("/api/gps/ingest")

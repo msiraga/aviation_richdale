@@ -562,6 +562,51 @@ tailwind.config = {
   </div>
 </div>
 
+<div id="lightbox" class="hidden fixed inset-0 z-[58] bg-[#02060d]/95 backdrop-blur-md">
+  <div class="absolute top-3 right-3 flex gap-1.5 z-10">
+    <button id="lbZoomOut" class="chip px-3 py-1.5 text-sm">-</button>
+    <button id="lbZoomIn" class="chip px-3 py-1.5 text-sm">+</button>
+    <button id="lbReset" class="chip px-3 py-1.5 text-sm">100%</button>
+    <button id="lbClose" class="chip px-3 py-1.5 text-sm">CLOSE &times;</button>
+  </div>
+  <div id="lbCaption" class="absolute top-3 left-3 text-[11px] uppercase tracking-[0.18em] text-sky-200/90 z-10 max-w-[60vw] truncate"></div>
+  <div id="lbStage" class="absolute inset-0 flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing">
+    <img id="lbImage" alt="" class="select-none max-w-none shadow-2xl" style="transform: translate(0px, 0px) scale(1); transition: transform 120ms ease-out;">
+  </div>
+</div>
+
+<div id="aptDossier" class="hidden fixed inset-0 z-[56] bg-[#02060d]/92 backdrop-blur-md overflow-y-auto p-4">
+  <div class="max-w-3xl mx-auto glass p-5 space-y-4 mt-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-[10px] font-bold uppercase tracking-[0.25em] text-sky-300">Airport dossier</div>
+        <h2 id="dossierIcao" class="text-2xl font-extrabold tracking-wide text-cyan-100"></h2>
+        <div id="dossierName" class="text-[11px] text-slate-400"></div>
+      </div>
+      <button id="dossierClose" class="chip px-3 py-1.5 text-xs">CLOSE &times;</button>
+    </div>
+    <div id="dossierLoading" class="text-slate-500 text-sm">fetching airport data &hellip;</div>
+    <div id="dossierBody" class="hidden space-y-4">
+      <section class="rounded-xl border border-emerald-400/20 p-3">
+        <div class="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-300 mb-2">Weather · live</div>
+        <div id="dossierWx" class="text-[12px] font-mono text-slate-200 space-y-2"></div>
+      </section>
+      <section class="rounded-xl border border-orange-400/20 p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-[0.2em] text-orange-300">NOTAMs in 5 NM</span>
+          <span id="dossierNotamCount" class="text-[10px] text-slate-500"></span>
+        </div>
+        <div id="dossierNotams" class="text-[12px] font-mono text-slate-200 space-y-2 max-h-[280px] overflow-y-auto"></div>
+      </section>
+      <section class="rounded-xl border border-cyan-400/20 p-3">
+        <div class="text-[11px] font-extrabold uppercase tracking-[0.2em] text-cyan-300 mb-2">Aerodrome (AD2)</div>
+        <div id="dossierAd2" class="text-[12px] font-mono text-slate-200 space-y-1"></div>
+        <a id="dossierChartLink" target="_blank" rel="noopener" class="hidden inline-block mt-2 chip px-3 py-1.5 text-[10px] uppercase tracking-[0.18em]">Open official ENAIRE chart &rarr;</a>
+      </section>
+    </div>
+  </div>
+</div>
+
 <div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-40 w-[400px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3">
   <div class="flex items-center justify-between">
     <span class="text-xs font-extrabold uppercase tracking-[0.25em] text-sky-200">WEATHER BRIEF</span>
@@ -641,7 +686,7 @@ tailwind.config = {
 <aside id="sidebar"
        class="sidebar-enter absolute left-4 top-[76px] bottom-4 z-30 w-[400px] max-w-[calc(100vw-2rem)] flex flex-col gap-3 overflow-hidden">
 
-  <section class="glass p-5 flex-none">
+  <section class="glass p-5 flex-none max-h-[calc(100vh-180px)] overflow-y-auto rounded-2xl">
     <div class="flex items-baseline justify-between mb-4">
       <h1 class="text-[13px] font-extrabold uppercase tracking-[0.2em] text-slate-200">Route Composer</h1>
       <span class="text-[10px] text-slate-500 font-mono">ICAO / lat,lon</span>
@@ -4881,6 +4926,173 @@ async function aemetFetchJson(path) {
 
 let frentesCache = null;
 let wxDrawerLoaded = false;
+
+/* ------------------------- lightbox: zoom/pan/close ----------------------- */
+
+const lb = { el: null, img: null, scale: 1, tx: 0, ty: 0, drag: null };
+
+function openLightbox(src, caption = '') {
+  lb.img = $('lbImage');
+  lb.img.src = src;
+  lb.img.style.transform = 'translate(0px, 0px) scale(1)';
+  lb.scale = 1; lb.tx = 0; lb.ty = 0;
+  $('lbCaption').textContent = caption;
+  $('lbCaption').title = caption;
+  $('lightbox').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+  $('lightbox').classList.add('hidden');
+  document.body.style.overflow = '';
+  if (lb.img) lb.img.src = '';
+}
+function lbApply() {
+  lb.img.style.transform = `translate(${lb.tx}px, ${lb.ty}px) scale(${lb.scale})`;
+}
+function lbZoom(delta, cx, cy) {
+  const prev = lb.scale;
+  lb.scale = Math.max(0.5, Math.min(8, lb.scale * delta));
+  if (cx != null && cy != null) {
+    const rect = $('lbStage').getBoundingClientRect();
+    const offX = cx - (rect.left + rect.width / 2) - lb.tx;
+    const offY = cy - (rect.top + rect.height / 2) - lb.ty;
+    lb.tx -= offX * (lb.scale / prev - 1);
+    lb.ty -= offY * (lb.scale / prev - 1);
+  }
+  lbApply();
+}
+
+$('lbClose')?.addEventListener('click', closeLightbox);
+$('lightbox')?.addEventListener('click', (ev) => { if (ev.target === $('lightbox') || ev.target === $('lbStage')) closeLightbox(); });
+document.addEventListener('keydown', (ev) => {
+  if ($('lightbox').classList.contains('hidden')) return;
+  if (ev.key === 'Escape') closeLightbox();
+  if (ev.key === '+' || ev.key === '=') lbZoom(1.25);
+  if (ev.key === '-' || ev.key === '_') lbZoom(1 / 1.25);
+  if (ev.key === '0') { lb.scale = 1; lb.tx = 0; lb.ty = 0; lbApply(); }
+});
+$('lbZoomIn')?.addEventListener('click', () => lbZoom(1.25));
+$('lbZoomOut')?.addEventListener('click', () => lbZoom(1 / 1.25));
+$('lbReset')?.addEventListener('click', () => { lb.scale = 1; lb.tx = 0; lb.ty = 0; lbApply(); });
+$('lbStage')?.addEventListener('wheel', (ev) => {
+  ev.preventDefault();
+  lbZoom(ev.deltaY < 0 ? 1.15 : 1 / 1.15, ev.clientX, ev.clientY);
+}, { passive: false });
+$('lbStage')?.addEventListener('pointerdown', (ev) => {
+  lb.drag = { x: ev.clientX, y: ev.clientY, tx: lb.tx, ty: lb.ty };
+  $('lbStage').setPointerCapture(ev.pointerId);
+});
+$('lbStage')?.addEventListener('pointermove', (ev) => {
+  if (!lb.drag) return;
+  lb.tx = lb.drag.tx + (ev.clientX - lb.drag.x);
+  lb.ty = lb.drag.ty + (ev.clientY - lb.drag.y);
+  lbApply();
+});
+$('lbStage')?.addEventListener('pointerup', () => { lb.drag = null; });
+$('lbStage')?.addEventListener('pointercancel', () => { lb.drag = null; });
+
+/* any <img> in sigwx or aerbrava card opens in the lightbox on click */
+$('sigwxCard')?.addEventListener('click', (ev) => {
+  if (ev.target?.tagName !== 'IMG') return;
+  ev.stopPropagation();
+  const cap = $('sigwxBody').dataset.caption || ev.target.alt || '';
+  openLightbox(ev.target.src, cap);
+});
+
+/* -------------------------- airport dossier panel ------------------------- */
+
+function openDossier(icao) {
+  $('dossierIcao').textContent = icao;
+  $('dossierName').textContent = '';
+  $('dossierLoading').classList.remove('hidden');
+  $('dossierBody').classList.add('hidden');
+  $('aptDossier').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  loadDossier(icao);
+}
+function closeDossier() {
+  $('aptDossier').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+$('dossierClose')?.addEventListener('click', closeDossier);
+$('aptDossier')?.addEventListener('click', (ev) => {
+  if (ev.target === $('aptDossier')) closeDossier();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !$('aptDossier').classList.contains('hidden')) closeDossier();
+});
+
+async function loadDossier(icao) {
+  icao = (icao || '').toUpperCase();
+  try {
+    const [dossier, briefing] = await Promise.all([
+      api(`/api/airport/dossier/${encodeURIComponent(icao)}`),
+      api('/api/weather/briefing', { method: 'POST', body: { icaos: [icao] } }).catch(() => null),
+    ]);
+    const ad2 = dossier.ad2 || {};
+    $('dossierName').textContent = ad2.name || '';
+    const wx = briefing?.briefings?.[icao] || {};
+    let wxHtml = '';
+    if (wx.metar_raw && wx.metar_raw.length) {
+      wxHtml += `<div class="text-emerald-300 mb-0.5">Latest METAR</div>
+        <div class="whitespace-pre-wrap text-cyan-100">${wx.metar_raw[0].replace(/^METAR\s*/, '')}</div>`;
+      const dec = decodeMetarLine(wx.metar_raw[0]);
+      if (dec) wxHtml += `<div class="text-[10px] text-slate-400">${dec}</div>`;
+    } else if (wx.metar_raw_error) {
+      wxHtml += `<div class="text-amber-300">METAR: ${wx.metar_raw_error}</div>`;
+    } else {
+      wxHtml += '<div class="text-slate-500">No METAR returned.</div>';
+    }
+    if (wx.taf_raw) {
+      wxHtml += `<details class="mt-2"><summary class="text-[10px] tracking-widest text-emerald-500 cursor-pointer">TAF (raw)</summary>
+        <div class="whitespace-pre-wrap text-slate-200 mt-1">${wx.taf_raw.replace(/^TAF/, '').trim()}</div></details>`;
+    } else if (wx.taf_raw_error) {
+      wxHtml += `<div class="text-amber-300 mt-1">TAF: ${wx.taf_raw_error}</div>`;
+    }
+    $('dossierWx').innerHTML = wxHtml;
+
+    $('dossierNotamCount').textContent = `${dossier.notam_count} active`;
+    if (dossier.notam_count) {
+      $('dossierNotams').innerHTML = dossier.notams.map(n =>
+        `<div class="border-l-2 border-orange-400/30 pl-2">
+          <div class="text-[10px] tracking-widest text-orange-200 mb-0.5">${n.location || ''}</div>
+          <div class="whitespace-pre-wrap text-slate-200">${n.raw || n.description || ''}</div>
+        </div>`).join('');
+    } else {
+      $('dossierNotams').innerHTML = '<div class="text-slate-500">No active NOTAMs within 5 NM.</div>';
+    }
+
+    const freq = ad2.frequencies || {};
+    const fields = [];
+    if (ad2.arp_latitude && ad2.arp_longitude) fields.push(['Coordinates', `${(+ad2.arp_latitude).toFixed(4)}, ${(+ad2.arp_longitude).toFixed(4)}`]);
+    if (ad2.transition_altitude_ft) fields.push(['Transition altitude', `${ad2.transition_altitude_ft} ft`]);
+    if (ad2.transition_level_ft) fields.push(['Transition level', `${ad2.transition_level_ft} ft`]);
+    if (ad2.runways?.length) fields.push(['Runways', ad2.runways.join(' / ')]);
+    if (freq.TOWER) fields.push(['Tower', `${freq.TOWER} MHz`]);
+    if (freq.GROUND) fields.push(['Ground', `${freq.GROUND} MHz`]);
+    if (freq.APPROACH) fields.push(['Approach', `${freq.APPROACH} MHz`]);
+    if (freq.ATIS) fields.push(['ATIS', `${freq.ATIS} MHz`]);
+    $('dossierAd2').innerHTML = fields.length
+      ? fields.map(([k, v]) => `<div><span class="text-slate-500">${k}:</span> <span class="text-cyan-100">${v}</span></div>`).join('')
+      : '<div class="text-slate-500">No AD2 data in our cache yet — open the airport chart on ENAIRE below.</div>';
+
+    const link = $('dossierChartLink');
+    link.href = ad2.vac_url || `https://aip.enaire.es/AIP/${icao}/`;
+    link.classList.remove('hidden');
+
+    $('dossierLoading').classList.add('hidden');
+    $('dossierBody').classList.remove('hidden');
+  } catch (err) {
+    $('dossierLoading').textContent = `dossier unavailable: ${err.message}`;
+  }
+}
+
+/* chip click in brief also opens the dossier (left column for METAR, lightbox for chart images) */
+$('briefChips')?.addEventListener('click', (ev) => {
+  const b = ev.target?.closest('button[data-icao]');
+  if (!b) return;
+  openDossier(b.dataset.icao);
+});
 
 function openWxDrawer() {
   const d = $('wxDrawer');
