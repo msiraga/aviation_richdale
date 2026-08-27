@@ -75,6 +75,69 @@ step · and what's **behind it** (data source, physics, honest limits).
 * **FLY mode** (orange button) declutters: composer, chart chips, legend and
   side panels hide; the cockpit HUD appears at the bottom.
 
+### 2.1 Top toolbar — every chip explained
+
+Every chip in the control bar pops a short **tool tip** the first time you
+click it. The tip is bottom-centre, glass-styled, and says what the chip
+does, when to use it, and where it works. A "Show this every time" toggle
+persists per chip in `localStorage`; once dismissed, the app never nags
+you again for that chip. The tip's "READ MORE" link jumps to the relevant
+section of the in-app Tool Directory.
+
+| Chip | Section | What it does | When to use | Where it works |
+|---|---|---|---|---|
+| **PLAN** | composer | route composer (left sidebar) | every time you build or change a route | left sidebar (400 px, scrolls) |
+| **MAP (DARK/LIGHT/SAT/TOPO)** | map layers | cycle base map style | match the context: TOPO for VFR ground reference, DARK for night, SAT for unfamiliar terrain | map background |
+| **CHART** | map layers | ENAIRE VFR chart overlay | want a certified-looking chart backdrop | map overlay |
+| **VOR/DME** | map layers | navaid symbols + airport dots by live METAR | always useful | map overlay |
+| **RAIN** | map layers | precipitation radar (5-min refresh) | pre-flight to see active weather; in flight to skirt cells | map overlay |
+| **RP** | map layers | ENAIRE VFR reporting points | crossing controlled-airspace boundaries | map overlay + composer grammar `RP:NAME` |
+| **TRF** | map layers | ADS-B traffic via OpenSky | in flight near busy airports; coverage-limited | map overlay + small TRF panel |
+| **🌐** | 3D views | 3D Earth with great-circle path | visualise a long route, sunrise/sunset alignment | full-screen overlay |
+| **VFR CHART** | map layers | OpenFlightMaps overlay | alternative official-looking VFR backdrop | map overlay (only if `OPENFLIGHTMAPS_TILE_URL` set) |
+| **AIRSPACE** | map layers | openAIP airspace polygons | pre-flight airspace inventory | map overlay (only if `OPENAIP_API_KEY` set) |
+| **BRIEF** | weather | right-side weather drawer (METAR/TAF + SIGMET + SIGWX) | pre-flight, always | right-side drawer |
+| **☀** (sun chip) | live | sunset UTC and daylight remaining at your position | time-of-flight awareness | header |
+| **GPS** | flight | position source toggle (browser GPS / simulator / off) | in flight, after the gesture unlock | header (green = fix) |
+| **FLY** | flight | engage the route (ghost flyer) | ready to fly the route | header, hides composer when on |
+| **SOS** | emergency | full-screen emergency card (squawk 7700, position, best 3 runways) | when something is wrong | always visible top-right |
+| **?** | help | the in-app Tool Directory | whenever you want long-form documentation | full-screen sheet |
+
+### 2.2 Lightbox viewer — every chart zooms
+
+Click any chart image in the SIGWX card (the 6-hourly Spain sigwx, the
+frentes, the analysis, the forecast maps) to open it full-screen. The
+lightbox is one reusable component used everywhere an image needs to be
+read carefully:
+
+* **Wheel** or **`+` / `-`** — zoom in / out
+* **Drag** — pan
+* **`0`** — reset to 100 %
+* **ESC** or **X** — close
+
+### 2.3 Airport dossier
+
+Tap any airport chip — in the WX drawer, the nav log BRIEF, or the map —
+to open a three-section dossier modal:
+
+* **Weather · live** — latest METAR + decoded summary + TAF (raw)
+* **NOTAMs in 5 NM** — active NOTAMs filtered to the airport
+* **Aerodrome (AD2)** — coordinates, transition altitude/level, runways
+  (deduped), Tower / Ground / Approach / ATIS frequencies
+* **Open official ENAIRE chart →** — links to the ENAIRE AIP page where
+  the airport chart (taxiway diagram, procedures) lives
+
+ESC or X closes.
+
+### 2.4 Scrollable composer
+
+The composer is `max-h-[calc(100vh-180px)] overflow-y-auto` so when its
+content exceeds the viewport (especially on shorter screens) you scroll
+inside the sidebar and the EXECUTE block stays reachable. Waypoint rows
+each have a number badge, a coloured type tag (AD / NAV / RP / FIX) and
+a large × to delete, so the list stays readable as it grows. Altitude has
+quick-set chips (2500 / 3500 / 4500 / 6500 / 9500) above the slider.
+
 ---
 
 ## 3. Cheat sheet — everything at a glance
@@ -201,6 +264,23 @@ side under the big Compute button so they don't compete with it.
 > which is why the SIGWX row reads the public + aerobrava sources instead.
 > If a chart button errors, press **DIAGNOSE**: it prints per-endpoint HTTP
 > status and byte counts so you can see exactly where it broke.
+
+#### 4.4.1 Chart sources in detail
+
+| Button | What it draws | Source | Auth | Cache | Notes |
+|---|---|---|---|---|---|
+| **SIGWX +0** / **+24** / **+36** / **+48** / **+60** / **+72** | Pilot-grade significant-weather chart at the chosen forecast step | aemet.es public `mapa de frentes` page | none | memory 30 min | Backend probes recent model runs (today 00Z, yesterday 12Z/00Z, two days back) and returns the first complete set; per-step URL codes are stable. |
+| **ANALYSIS** | AEMET surface analysis (fronts, pressure) | AEMET OpenData `/mapasygraficos/analisis` | `AEMET_API_KEY` | disk per image | Browser-side fetch (AEMET F5 bot shield rejects server-side). |
+| **FCST H+24** / **H+48** / **H+72** | AEMET forecast map at the chosen step | AEMET OpenData `/mapasygraficos/previstos/h24..h72` | `AEMET_API_KEY` | disk per image | Browser-side fetch. The undocumented `previstos` family is the planning-decision goldmine. |
+| **SIGWX ES · 6 h** | Spain significant-weather PNG (AEMET-fed) | aerobrava.com `im/imcomp/sigesp.png` | none | disk 90 min | Stale-cache fallback: if aerbrava returns empty we keep serving the last good chart so the brief never goes dark. |
+| **DIAGNOSE** | per-endpoint HTTP status + byte count | `/api/aemet/diag` | none | n/a | Press this if any chart button errors — it shows exactly where the failure happened. |
+
+> The `/api/aemet/diag` endpoint is your honesty tool. It probes
+> `mapassignificativos/analisis/previstos/avisos_cap` with the configured
+> `api_key` and returns per-endpoint status + bytes plus a one-line
+> conclusion (e.g. *"AEMET gateway returned EMPTY bodies for every
+> endpoint"*). Use it before assuming the app is broken — most "empty
+> chart" reports turn out to be upstream behaviour, not our code.
 
 ### 4.5 NOTAMS tab
 Automatic bounding-box fetch around the whole route, active items only
@@ -523,6 +603,8 @@ telemetry, no accounts.
 | Stale build stamp after update | Templates hot-reload but Python doesn't — restart uvicorn. |
 | Voice callouts silent | Arm once via ENABLE VOICE CALLOUTS (iOS gesture rule); low calls suppress when vertical accuracy >±12 m — shown live in-panel. |
 | Traffic shows nothing | Coverage/rate-limit reality; advisory layer only. |
+| Want to re-enable every tool tip | Clear the `tooltips.dismissed` key in browser DevTools → Application → Local Storage, or paste `localStorage.removeItem('tooltips.dismissed'); location.reload();` in the console. |
+| Want to re-enable one specific tool tip | Open the Tool Directory (`?`) and scroll to the chip's section, or click the chip once — the tip will pop if not previously dismissed. |
 
 ---
 

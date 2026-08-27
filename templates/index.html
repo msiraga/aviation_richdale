@@ -280,35 +280,35 @@ tailwind.config = {
   <div class="glass pointer-events-auto relative px-3 py-2 max-w-[min(100vw-1rem,calc(100vw-300px))]">
     <span id="scrL" class="scroll-hint left">‹</span><span id="scrR" class="scroll-hint right">›</span>
     <div id="chipBar" class="chipbar justify-end">
-    <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition shrink-0">PLAN</button>
+    <button id="composerToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition shrink-0" data-doc="chip.plan">PLAN</button>
 
-    <span class="zone-label" id="mapZoneLabel" title="cycle map style (same as the DARK/LIGHT/SAT button)" style="cursor:pointer">MAP</span>
-    <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition">DARK</button>
-    <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition">CHART</button>
-    <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition">VOR/DME</button>
-    <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition">RAIN</button>
-    <button id="rpToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition" title="VFR entry/exit reporting points from ENAIRE VAC charts">RP</button>
-    <button id="trafficToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-rose-100 hover:bg-rose-400/20 transition" title="ADS-B traffic via OpenSky — coverage-limited advisory">TRF</button>
-    <button id="earthBtnHeader" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" title="3D Earth with great-circle route">&#127758;</button>
-    <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
-    <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
+    <span class="zone-label" id="mapZoneLabel" title="cycle map style" style="cursor:pointer">MAP</span>
+    <button id="basemapToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" data-doc="chip.basemap">DARK</button>
+    <button id="chartEsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition" data-doc="chip.chart">CHART</button>
+    <button id="navaidsToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-sky-100 hover:bg-sky-400/20 transition" data-doc="chip.navaids">VOR/DME</button>
+    <button id="radarToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-400/20 transition" data-doc="chip.rain">RAIN</button>
+    <button id="rpToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/20 transition" data-doc="chip.rp" title="VFR entry/exit reporting points from ENAIRE VAC charts">RP</button>
+    <button id="trafficToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-rose-100 hover:bg-rose-400/20 transition" data-doc="chip.trf" title="ADS-B traffic via OpenSky — coverage-limited advisory">TRF</button>
+    <button id="earthBtnHeader" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition" data-doc="chip.earth" title="3D Earth with great-circle route">&#127758;</button>
+    <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden" data-doc="chip.ofm">VFR CHART</button>
+    <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden" data-doc="chip.openaip">AIRSPACE</button>
 
     <span class="zone-label">WX</span>
-    <button id="wxDrawerToggle" class="rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-1.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/20 transition" title="full weather brief: METAR/TAF, SIGMET, SIGWX charts">BRIEF</button>
+    <button id="wxDrawerToggle" class="rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-1.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/20 transition" title="full weather brief: METAR/TAF, SIGMET, SIGWX charts" data-doc="chip.wxbrief">BRIEF</button>
 
     <span class="zone-label">SKY</span>
     <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining at your position">☀ --:--Z</span>
 
     <span class="zone-label">FLIGHT</span>
-    <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition">
+    <button id="gpsToggle" class="flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition" data-doc="chip.gps">
       <span id="gpsDot" class="h-2 w-2 rounded-full bg-slate-500"></span>
       <span id="gpsLabel">GPS OFF</span>
     </button>
-    <button id="flyToggle" class="rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition">
+    <button id="flyToggle" class="rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-200 hover:bg-orange-400/20 transition" data-doc="chip.fly">
       FLY
     </button>
-    <button id="sosBtn" class="rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-rose-200 hover:bg-rose-500/30 transition shrink-0" title="emergency assistant">SOS</button>
-    <button id="helpBtn" class="chip px-2.5 py-1.5 text-[12px] font-bold text-slate-200 hover:bg-white/10 transition shrink-0" title="every tool explained">?</button>
+    <button id="sosBtn" class="rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-rose-200 hover:bg-rose-500/30 transition shrink-0" title="emergency assistant" data-doc="chip.sos">SOS</button>
+    <button id="helpBtn" class="chip px-2.5 py-1.5 text-[12px] font-bold text-slate-200 hover:bg-white/10 transition shrink-0" title="every tool explained" data-doc="chip.help">?</button>
     <div class="h-6 w-px bg-slate-500/20 mx-1"></div>
     <div class="flex items-center gap-1.5 pr-1" title="server link">
       <span id="linkDot" class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
@@ -331,37 +331,86 @@ tailwind.config = {
       <button id="helpClose" class="chip px-3 py-1.5 text-xs font-bold">CLOSE &#10005;</button>
     </div>
 
-    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300 mt-4 mb-1">Map layers (header · MAP)</h3>
+    <p class="text-[10px] text-slate-400 leading-relaxed mb-4">
+      Every chip in the top toolbar also pops a short tip on first use. The
+      "Show this every time" toggle in the tip controls whether the tip
+      re-appears; otherwise the app remembers you've seen it. This sheet
+      is the long-form reference.
+    </p>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300 mt-4 mb-1" id="help-chip.plan">Plan</h3>
     <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
-      <div class="pt-1"><dt class="inline font-bold text-white">DARK/LIGHT/SAT&nbsp;</dt><dd class="inline">base map &amp; satellite imagery — tap the MAP label to cycle too.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">CHART&nbsp;</dt><dd class="inline">official ENAIRE VFR chart; takes a few seconds per tile first time.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">VOR/DME&nbsp;</dt><dd class="inline">navaid symbols + airport dots coloured by live METAR (see legend below).</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">RAIN&nbsp;</dt><dd class="inline">precipitation radar, refreshes every 5 min.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">RP&nbsp;</dt><dd class="inline">Spanish VFR entry/exit reporting points from ENAIRE charts.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">TRF&nbsp;</dt><dd class="inline">ADS-B traffic advisory — transponding aircraft in coverage only.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">&#127758;&nbsp;</dt><dd class="inline">3D Earth with your great-circle itinerary, day/night terminator, X-RAY &amp; LOCATE.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">PLAN&nbsp;</dt><dd class="inline">the route composer (left sidebar). Three bordered groups: ROUTE (departure, arrival, en-route waypoints) · PERFORMANCE (altitude slider with quick-set chips, TAS, burn, unit, destination runway heading for crosswind) · EXECUTE (Compute / Simulate / Edit on map / scenario). The composer scrolls internally so the EXECUTE block is always reachable on short screens.</dd></div>
     </dl>
 
-    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300 mt-5 mb-1">Navigation</h3>
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300 mt-5 mb-1" id="help-chip.basemap">Map layers (header · MAP)</h3>
     <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
-      <div class="pt-1"><dt class="inline font-bold text-white">PLAN&nbsp;</dt><dd class="inline">route composer; altitude advisor ranks wind levels for you.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">Nav log tabs&nbsp;</dt><dd class="inline">BRIEF (crosswind, glare, night check) · WEATHER (wind advisor, Fly-the-Future scrubber, TAF bars, clouds) · NOTAMS · LOG table.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">TUNE / DIRECT on a VOR&nbsp;</dt><dd class="inline">DIRECT = just fly the big amber heading. TUNE = classic CDI with TO/FROM, also showing the fly-heading.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">DARK/LIGHT/SAT/TOPO&nbsp;</dt><dd class="inline">base map cycle. TOPO is the default — OpenTopoMap with roads, railways, relief and city labels (the closest thing to a VFR ground-reference chart we can ship without keys). DARK and LIGHT are CARTO; SAT is Esri World Imagery.</dd></div>
+      <div class="pt-1" id="help-chip.chart"><dt class="inline font-bold text-white">CHART&nbsp;</dt><dd class="inline">official ENAIRE VFR chart overlay on top of your base map. First time per tile takes a few seconds, then cached.</dd></div>
+      <div class="pt-1" id="help-chip.navaids"><dt class="inline font-bold text-white">VOR/DME&nbsp;</dt><dd class="inline">navaid symbols + airport dots coloured by live METAR (green = VFR, blue = MVFR, red = IFR; see the legend top-left of the map).</dd></div>
+      <div class="pt-1" id="help-chip.rain"><dt class="inline font-bold text-white">RAIN&nbsp;</dt><dd class="inline">precipitation radar (RainViewer), refreshes every 5 minutes.</dd></div>
+      <div class="pt-1" id="help-chip.rp"><dt class="inline font-bold text-white">RP&nbsp;</dt><dd class="inline">Spanish VFR entry/exit reporting points from ENAIRE VAC charts. Also addressable from the composer as <b>RP:NAME</b> or <b>ICAO:NAME</b>.</dd></div>
+      <div class="pt-1" id="help-chip.trf"><dt class="inline font-bold text-white">TRF&nbsp;</dt><dd class="inline">ADS-B traffic advisory via OpenSky — only transponding aircraft, coverage-limited, advisory only.</dd></div>
+      <div class="pt-1" id="help-chip.earth"><dt class="inline font-bold text-white">EARTH&nbsp;</dt><dd class="inline">3D Earth with your great-circle itinerary, day/night terminator, X-RAY (see through the planet), LOCATE (fly back to route).</dd></div>
+      <div class="pt-1" id="help-chip.ofm"><dt class="inline font-bold text-white">VFR CHART&nbsp;</dt><dd class="inline">OpenFlightMaps overlay — only appears if OPENFLIGHTMAPS_TILE_URL is provisioned. Hidden otherwise (no nag).</dd></div>
+      <div class="pt-1" id="help-chip.openaip"><dt class="inline font-bold text-white">AIRSPACE&nbsp;</dt><dd class="inline">openAIP airspace polygons — only if OPENAIP_API_KEY is configured.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300 mt-5 mb-1" id="help-chip.wxbrief">Weather</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">BRIEF&nbsp;</dt><dd class="inline">right-side weather drawer with three heavy brief cards: live METAR/TAF per airport on your route (from NOAA AWC, no key) · SIGMET over Spain (from NOAA AWC, FIR-filtered) · SIGWX charts (AEMET frentes +0/+24/+36/+48/+60/+72, OpenData analysis and forecast maps if AEMET_API_KEY is set, Spain sigwx 6h via aerobrava). Tap any airport chip inside the drawer to open its dossier.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300 mt-5 mb-1" id="help-chip.sos">Safety panels</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">SOS&nbsp;</dt><dd class="inline">full-screen emergency card: squawk 7700, position copy/SMS, best three runways reachable at your current altitude/glide.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Guardian (top-left in FLY)&nbsp;</dt><dd class="inline">engine-out: dashed reachability envelope + ranked runways by margin and crosswind.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Ground view (bottom-left)&nbsp;</dt><dd class="inline">appears when slow near an airport — runway diagram, approach gates, per-end head/crosswind, SET FINAL.</dd></div>
       <div class="pt-1"><dt class="inline font-bold text-white">FINAL panel (right)&nbsp;</dt><dd class="inline">virtual PAPI lights, glidepath strip, TRACK/FLY/XW steering, voice callouts, landing perf card. Arm from an airport popup, Ground view, or FLY HUD.</dd></div>
       <div class="pt-1"><dt class="inline font-bold text-white">CAMERA VIEW&nbsp;</dt><dd class="inline">experimental rear-camera runway silhouette — non-conformal aid only.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">DR banner&nbsp;</dt><dd class="inline">appears automatically if GPS degrades with a route active — shows last HDG/GS.</dd></div>
     </dl>
 
-    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300 mt-5 mb-1">Safety panels</h3>
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mt-5 mb-1">Modals &amp; viewers</h3>
     <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
-      <div class="pt-1"><dt class="inline font-bold text-white">Guardian (top-left in FLY)&nbsp;</dt><dd class="inline">engine-out: dashed reachability envelope + ranked runways by margin &amp; crosswind.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">Ground view (bottom-left)&nbsp;</dt><dd class="inline">appears when slow near an airport — runway diagram, approach gates, per-end head/crosswind, SET FINAL.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">SOS&nbsp;</dt><dd class="inline">fullscreen emergency card: squawk 7700, position copy/SMS, best three runways.</dd></div>
-      <div class="pt-1"><dt class="inline font-bold text-white">DR banner&nbsp;</dt><dd class="inline">appears automatically if GPS degrades with a route active — shows last HDG/GS.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Lightbox&nbsp;</dt><dd class="inline">click any chart image to open it full-screen. Wheel / +/- to zoom, drag to pan, 0 to reset, ESC or X to close. Works on every sigwx, analysis, forecast map and 6-hourly Spain sigwx image.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Airport dossier&nbsp;</dt><dd class="inline">tap any airport chip (in the WX drawer, in the nav log BRIEF, or on the map) to open: live METAR + decoded summary + TAF (raw), NOTAMs within 5 NM, AD2 fields (runways, transition altitude/level, Tower/Ground/Approach/ATIS frequencies), and a link to the official ENAIRE chart page for the airport. ESC or X to close.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">NAV log tabs&nbsp;</dt><dd class="inline">BRIEF (crosswind, glare, night check) · WEATHER (wind advisor, Fly-the-Future scrubber, TAF bars, clouds — plus an "Open full weather brief" button) · NOTAMS · LOG table.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">3D Earth&nbsp;</dt><dd class="inline">drag rotate · pinch / wheel / +/- zoom · real day/night · amber tube = shortest path over the curved Earth.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300 mt-5 mb-1">Navigation</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">TUNE / DIRECT on a VOR&nbsp;</dt><dd class="inline">DIRECT = just fly the big amber heading. TUNE = classic CDI with TO/FROM, also showing the fly-heading.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Edit trip on map&nbsp;</dt><dd class="inline">inside the composer. Click the map to insert a waypoint within 30 NM of the route, click a marker to remove it, drag markers to reposition. The route recomputes 700 ms after you stop moving.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-300 mt-5 mb-1">Simulation &amp; training</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">Simulate flight (ghost flyer)&nbsp;</dt><dd class="inline">deterministic point-mass replay with real per-leg wind samples, fuel burn and drift. Results: T+ / GS / FUEL / DRIFT chip in the top toolbar.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Scenario trainer&nbsp;</dt><dd class="inline">plain / engine failure mid-route / engine failure late. After the failure the system asks for your decision (land straight ahead / turn back / pick an option) and scores it on landing.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mt-5 mb-1">Keyboard shortcuts</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">ESC&nbsp;</dt><dd class="inline">close the top-most overlay (lightbox, dossier, help sheet, sim-toast, decision card).</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">+ / -&nbsp;</dt><dd class="inline">zoom in/out inside the lightbox.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">0&nbsp;</dt><dd class="inline">reset lightbox zoom to 100%.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">wheel / drag&nbsp;</dt><dd class="inline">zoom / pan inside the lightbox.</dd></div>
+    </dl>
+
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mt-5 mb-1">Troubleshooting quickies</h3>
+    <dl class="text-[11px] leading-relaxed text-slate-300 space-y-1">
+      <div class="pt-1"><dt class="inline font-bold text-white">Charts return empty&nbsp;</dt><dd class="inline">press DIAGNOSE on the SIGWX card; it prints per-endpoint HTTP status and byte counts so you can see exactly where it broke.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">AEMET key was rejected&nbsp;</dt><dd class="inline">open https://opendata.aemet.es → profile → "Obtención de la APIKEY" → use the site's copy button → paste into .env.txt replacing the whole value, then restart the server.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Python changes not visible&nbsp;</dt><dd class="inline">Python changes need a server restart. Page-only changes (templates, static) hot-reload after a browser refresh.</dd></div>
+      <div class="pt-1"><dt class="inline font-bold text-white">Tiles missing or pink&nbsp;</dt><dd class="inline">check that your machine can reach the public tile servers (basemaps.cartocdn.com, tile.opentopomap.org, server.arcgisonline.com, a.tile.opentopomap.org). Mixed content: served over HTTPS, tiles are HTTPS — no issue.</dd></div>
     </dl>
 
     <div class="mt-6 text-[9px] text-slate-500 leading-relaxed">
       Full detail, data sources and limitations live in MANUAL.md at the project root.
-      This app is decision support, not certified equipment.
+      This app is decision support, not certified equipment. Always cross-check
+      with official ENAIRE publications, AEMET briefings and ATC instructions.
     </div>
   </div>
 </div>
@@ -957,12 +1006,206 @@ tailwind.config = {
 }
 </script>
 
+<div id="docPop" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[59] w-[460px] max-w-[calc(100vw-2rem)] glass p-4 rounded-2xl border border-cyan-300/30 shadow-2xl">
+  <div class="flex items-start justify-between mb-1.5">
+    <span class="text-[10px] font-extrabold uppercase tracking-[0.22em] text-cyan-300">Tool tip</span>
+    <button id="docPopClose" class="chip px-2 py-0.5 text-[9px]">GOT IT &times;</button>
+  </div>
+  <h3 id="docPopTitle" class="text-base font-extrabold text-cyan-100 mb-1.5"></h3>
+  <p id="docPopWhat" class="text-[12px] text-slate-200 leading-relaxed mb-2"></p>
+  <div class="grid grid-cols-2 gap-2 mb-2">
+    <div>
+      <div class="text-[9px] font-bold uppercase tracking-widest text-amber-300 mb-0.5">When to use</div>
+      <p id="docPopWhen" class="text-[11px] text-slate-300 leading-relaxed"></p>
+    </div>
+    <div>
+      <div class="text-[9px] font-bold uppercase tracking-widest text-emerald-300 mb-0.5">Where it works</div>
+      <p id="docPopWhere" class="text-[11px] text-slate-300 leading-relaxed"></p>
+    </div>
+  </div>
+  <p id="docPopMore" class="text-[10px] text-slate-400 leading-relaxed italic mb-2"></p>
+  <div class="flex items-center justify-between border-t border-white/10 pt-2">
+    <label class="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer">
+      <input type="checkbox" id="docPopRepeat" class="accent-cyan-400"> Show this every time
+    </label>
+    <button id="docPopMoreBtn" class="chip px-2.5 py-0.5 text-[10px] font-bold">READ MORE &rarr;</button>
+  </div>
+</div>
+
 <script>
 "use strict";
 
 const BOOT = JSON.parse(document.getElementById('boot-config').textContent);
 
 const $ = (id) => document.getElementById(id);
+
+/* ============================ In-app tool tips ============================
+ *
+ * Every chip in the toolbar carries `data-doc="chip.<key>"`. The first time
+ * a pilot clicks one, a bottom-center popover explains what it does, when
+ * to use it and where it works, with a "Show this every time" toggle
+ * persisted in localStorage. Pilots who already know the tool dismiss it
+ * with GOT IT; the app never nags them again.
+ * ========================================================================= */
+const DOC = {
+  'chip.plan': {
+    title: 'PLAN — the route composer',
+    what: 'Opens the left sidebar where you type your departure, arrival and en-route waypoints, set cruise altitude, TAS and fuel burn, and COMPUTE the flight plan.',
+    when: 'Every time you build or change a route. Also home to "Edit trip on map" (drag waypoints visually) and the scenario trainer.',
+    where: 'Left sidebar (400 px wide). The composer scrolls internally on short screens so the EXECUTE block is always reachable.',
+    more: 'Crosswind uses your destination runway heading (in degrees magnetic). Click any waypoint chip later to open the airport dossier (METAR/TAF + NOTAMs in 5 NM + AD2 fields).',
+  },
+  'chip.basemap': {
+    title: 'MAP — base layer cycle',
+    what: 'Switches the underlying map style. Cycles TOPO → DARK → LIGHT → SAT.',
+    when: 'Before planning, to match the context: TOPO for VFR ground reference (roads, railways, relief — the default), DARK for night or to highlight route lines, SAT for unfamiliar terrain, LIGHT for printing.',
+    where: 'Tap the MAP label or the named button.',
+    more: 'TOPO is OpenTopoMap (CC-BY-SA). DARK/LIGHT are CARTO. SAT is Esri World Imagery. Mixed-content safe.',
+  },
+  'chip.chart': {
+    title: 'CHART — official ENAIRE VFR chart',
+    what: 'Toggles the official Spanish VFR chart tile overlay on top of your base map.',
+    when: 'When you want a certified-looking chart backdrop to read procedures, reporting points and airspace classes.',
+    where: 'Layer on top of any base map. Tile loading is progressive — first time it takes a few seconds per tile, then cached.',
+    more: 'Source: OpenFlightMaps-style tile template. Without a provisioned tile URL this button stays hidden (quiet by design).',
+  },
+  'chip.navaids': {
+    title: 'VOR/DME — navaids + live airport colours',
+    what: 'Shows VOR/DME/NDB symbols on the map and colours every airport dot by its live METAR category (green = VFR, blue = MVFR, red = IFR).',
+    when: 'Always useful — colours tell you at a glance which airports are VFR right now.',
+    where: 'Map overlay. Hover an airport dot for its ICAO and category.',
+    more: 'Affects the airport legend in the top-left of the map.',
+  },
+  'chip.rain': {
+    title: 'RAIN — precipitation radar',
+    what: 'Animates a 5-minute refresh radar composite (RainViewer) over the map.',
+    when: 'Pre-flight to see where the active weather is; in flight to skirt cells along the route.',
+    where: 'Map overlay. Frame the route to see precipitation timing.',
+    more: 'Free RainViewer feed. Animation speed and play/pause are in the layer control.',
+  },
+  'chip.rp': {
+    title: 'RP — ENAIRE VFR reporting points',
+    what: 'Overlays Spanish VFR entry/exit reporting points (the "puntos de notificación") parsed from the ENAIRE VAC charts.',
+    when: 'Building a route that crosses controlled airspace boundaries — RPs are how you formally request entry/exit.',
+    where: 'Map overlay. Each RP is also addressable from the composer as RP:NAME or ICAO:NAME (e.g. RP:FOIOS, LEVC:FOIOS).',
+    more: 'First time per airport we hit ENAIRE, subsequent times are cached to disk.',
+  },
+  'chip.trf': {
+    title: 'TRF — ADS-B traffic advisory',
+    what: 'Shows transponding aircraft near your route via OpenSky Network, with CPA (closest-point-of-approach) alerts.',
+    when: 'In flight, especially near busy airports or uncontrolled airspace — it draws your attention to converging traffic before you see it.',
+    where: 'Map overlay + a small TRF panel with the closest intruder and bearing.',
+    more: 'Coverage is best in low-altitude dense airspace; non-transponding aircraft are invisible by definition.',
+  },
+  'chip.earth': {
+    title: 'EARTH — 3D great-circle view',
+    what: 'Opens a 3D globe with your itinerary as an amber great-circle path, plus day/night terminator and an X-RAY view to see through the planet.',
+    when: 'To visualise a long route, check sunrise/sunset alignment along the way, or sanity-check that your path makes sense at a planetary scale.',
+    where: 'Full-screen overlay. Drag to rotate, wheel/pinch to zoom, LOCATE to fly back to your route.',
+    more: 'Uses procedural Earth plus day/night overlay; not a satellite model.',
+  },
+  'chip.ofm': {
+    title: 'VFR CHART — OpenFlightMaps overlay',
+    what: 'Toggle for the OpenFlightMaps VFR chart tile layer.',
+    when: 'When you want an alternative official-looking VFR backdrop, especially outside Spain.',
+    where: 'Map overlay. Visible only if OPENFLIGHTMAPS_TILE_URL is set.',
+    more: 'OpenFlightMaps rotates infrastructure; supply the current XYZ template via env to enable.',
+  },
+  'chip.openaip': {
+    title: 'AIRSPACE — openAIP airspace',
+    what: 'Overlays controlled/restricted/danger/advisory airspace polygons from openAIP.',
+    when: 'Pre-flight to see what airspace you cross and at what altitude; in flight to avoid a CTR that you would otherwise drift into.',
+    where: 'Map overlay. Visible only if OPENAIP_API_KEY is configured.',
+    more: 'Combined with the WX BRIEF and a runway-aware route it answers the "where exactly can I fly" question.',
+  },
+  'chip.wxbrief': {
+    title: 'BRIEF — full weather brief',
+    what: 'Opens the right-side weather drawer with the three heavy brief cards: live METAR/TAF per airport on your route, SIGMET over Spain, and the SIGWX chart sources.',
+    when: 'Pre-flight (always). It is independent of the nav log so you can read weather without first computing a route.',
+    where: 'Right-side drawer. Also reachable from inside the nav log WEATHER tab via the "Open full weather brief →" button.',
+    more: 'Tap any airport chip inside the drawer to open its dossier (METAR + NOTAMs within 5 NM + AD2 fields + official ENAIRE chart link).',
+  },
+  'chip.gps': {
+    title: 'GPS — position source',
+    what: 'Switches the position source between the browser geolocation API (real GPS on mobile), the in-app simulator, and "off".',
+    when: 'In flight, after the gesture unlock: tap once, your device may ask for permission, then the dot turns green and the system flies you along the route.',
+    where: 'Top toolbar. Colour: green = fix, amber = degraded, slate = off.',
+    more: 'iOS Safari needs a one-time user gesture (the same tap) before the DeviceOrientation API unlocks.',
+  },
+  'chip.fly': {
+    title: 'FLY — engage the route',
+    what: 'Engages the ghost flyer: the plane icon moves along the route, HUD overlay appears (altitude, speed, vertical speed, heading), the Guardian panel lights up for engine-out monitoring, and the FINAL panel arms when near an airport.',
+    when: 'When you are ready to fly the route. Tap again to disengage.',
+    where: 'Top toolbar. While FLY is on, the layout hides the composer and maximises the map.',
+    more: 'Uses real point-mass kinematics with per-leg wind samples, fuel burn, drift and a ±12 m vertical-accuracy gate around airports.',
+  },
+  'chip.sos': {
+    title: 'SOS — emergency card',
+    what: 'Full-screen emergency assistant: squawk 7700 reminder, your last known position copy/SMS, the best three runways reachable at your current altitude/glide, plus a forced guardian re-evaluation.',
+    when: 'When something is wrong and the normal flight flow is not the priority. One tap, one screen, no menus.',
+    where: 'Always visible top-right.',
+    more: 'Designed to be reached in under one second. The SMS link opens your default handler with a pre-filled position string.',
+  },
+  'chip.help': {
+    title: '? — full tool directory',
+    what: 'Opens the comprehensive help sheet with anchors for every tool, panel and shortcut.',
+    when: 'Whenever you want the long-form documentation, or to deep-link a specific topic.',
+    where: 'Top toolbar.',
+    more: 'Every chip also pops a short tip on first click. Use the tool tip to jump to the relevant section in the help sheet.',
+  },
+};
+
+let docPopDismissed = {};
+try { docPopDismissed = JSON.parse(localStorage.getItem('tooltips.dismissed') || '{}'); } catch (_) {}
+
+function openDocPop(key) {
+  const d = DOC[key];
+  if (!d) return;
+  $('docPopTitle').textContent = d.title;
+  $('docPopWhat').textContent = d.what;
+  $('docPopWhen').textContent = d.when;
+  $('docPopWhere').textContent = d.where;
+  $('docPopMore').textContent = d.more || '';
+  $('docPopRepeat').checked = !docPopDismissed[key];
+  $('docPopMoreBtn').dataset.target = key;
+  $('docPop').classList.remove('hidden');
+}
+function closeDocPop() { $('docPop').classList.add('hidden'); }
+$('docPopClose')?.addEventListener('click', () => {
+  const key = $('docPopMoreBtn').dataset.target;
+  if (key && !$('docPopRepeat').checked) {
+    docPopDismissed[key] = true;
+    try { localStorage.setItem('tooltips.dismissed', JSON.stringify(docPopDismissed)); } catch (_) {}
+  }
+  closeDocPop();
+});
+$('docPopMoreBtn')?.addEventListener('click', () => {
+  const key = $('docPopMoreBtn').dataset.target;
+  closeDocPop();
+  if (!key) return;
+  openHelp();
+  setTimeout(() => {
+    const anchor = document.getElementById('help-' + key);
+    if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+});
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target?.closest('[data-doc]');
+  if (!el) return;
+  if ($('docPop').contains(el)) return;
+  const key = el.dataset.doc;
+  if (!key) return;
+  if (docPopDismissed[key]) return;
+  // Defer so the click's own action (toggle, open) runs first; the popover
+  // explains what just happened, which is the most useful moment.
+  setTimeout(() => openDocPop(key), 120);
+});
+
+function openHelp() {
+  $('helpSheet').classList.remove('hidden');
+  $('helpSheet').scrollTop = 0;
+}
 
 function el(tag, cls, html) {
   const node = document.createElement(tag);
@@ -4386,7 +4629,7 @@ $('sosCopy').addEventListener('click', async () => {
 
 /* ========================= TOOL DIRECTORY (?) ============================== */
 
-$('helpBtn')?.addEventListener('click', () => $('helpSheet').classList.remove('hidden'));
+$('helpBtn')?.addEventListener('click', openHelp);
 $('helpClose')?.addEventListener('click', () => $('helpSheet').classList.add('hidden'));
 
 // ‹ › hints whenever the chip bar actually overflows
