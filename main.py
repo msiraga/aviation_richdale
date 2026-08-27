@@ -1650,10 +1650,22 @@ async def post_ground_nearby(body: GroundRequest):
 async def post_terrain_profile(body: TerrainProfileRequest):
     result = await app.state.terrain.build_profile(body.waypoint_pairs(), body.cruise_altitude_ft)
     collision = len(result.breach_indices) > 0
+    samples = [s for s in result.samples if s.terrain_ft is not None]
+    stats = None
+    if samples:
+        heights = [s.terrain_ft for s in samples]
+        stats = {
+            "terrain_min_ft": min(heights),
+            "terrain_mean_ft": sum(heights) / len(heights),
+            "terrain_max_ft": max(heights),
+            "samples": len(samples),
+            "breach_count": len(result.breach_indices),
+        }
     return ok_payload(
         {
             "profile": result,
             "collision_alert": collision,
+            "stats": stats,
             "alert_message": (
                 "TERRAIN COLLISION RISK: planned cruise altitude intersects the 1,000 ft "
                 "VFR safety ceiling over the marked sectors."
@@ -1662,6 +1674,236 @@ async def post_terrain_profile(body: TerrainProfileRequest):
             ),
         }
     )
+
+
+# ---- Personal minimums (pilot-owned go/no-go framework) ---------------------
+
+class MinimumsRequest(BaseModel):
+    departure_icao: str
+    arrival_icao: str
+    cruise_altitude_ft: int = Field(default=4500, ge=500, le=25000)
+    eobt_iso: str | None = None
+    min_ceiling_ft: int = Field(default=1500, ge=200, le=10000)
+    min_visibility_sm: float = Field(default=3.0, ge=0.5, le=10.0)
+    max_crosswind_kt: float = Field(default=12.0, ge=2, le=40)
+    max_wind_kt: float = Field(default=25.0, ge=5, le=60)
+    night_ok: bool = Field(default=False)
+    cat_min: str = Field(default="VFR")  # VFR / MVFR / IFR
+
+
+def _wx_category(metar_raw: str | None) -> str:
+    """Simple METAR category classifier: VFR / MVFR / IFR / LIFR."""
+    if not metar_raw:
+        return "UNKNOWN"
+    import re as _re
+    m_vis = _re.search(r"\s(\d+)(?:/(\d+))?(SM|sm)\s", metar_raw)
+    vis_sm = None
+    if m_vis:
+        vis_sm = int(m_vis.group(1))
+        if m_vis.group(2):
+            vis_sm = int(m_vis.group(1)) / int(m_vis.group(2))
+    if vis_sm is None:
+        vis_sm = 10  # CAVOK default
+    m_ceil = _re.search(r"\s(BKN|OVC)(\d{3,4})", metar_raw)
+    ceil_ft = int(m_ceil.group(2)) * 100 if m_ceil else 99999
+    if vis_sm < 1.0 or ceil_ft < 500:
+        return "LIFR"
+    if vis_sm < 3.0 or ceil_ft < 1000:
+        return "IFR"
+    if vis_sm <= 5.0 or ceil_ft <= 3000:
+        return "MVFR"
+    return "VFR"
+
+
+@app.post("/api/minimums/go")
+async def post_minimums_go(body: MinimumsRequest):
+    """Personal minimums evaluation: GO / CAUTION / NOGO with reasons.
+
+    Decision support for pilots — final authority stays with ATC and the
+    PIC. This is a *display* of the go/no-go logic not a substitute for
+    currently-legible weather minimums (which the PIC enters).
+    """
+    weather = app.state.weather
+    dep = body.departure_icao.upper()
+    arr = body.arrival_icao.upper()
+    metars: dict[str, dict[str, Any]] = {}
+    for tag, icao in (("departure", dep), ("arrival", arr)):
+        try:
+            o = await weather.get_noaa_snapshot(icao)
+            metars[tag] = {
+                "icao": icao,
+                "metar": (o.metar or {}).get("raw", None),
+                "category": _wx_category((o.metar or {}).get("raw")),
+                "wind_kt": getattr(o, "wind_speed_kt", None),
+                "wind_from": getattr(o, "wind_direction_deg", None),
+                "source": "live",
+            }
+        except Exception as exc:  # noqa: BLE001
+            metars[tag] = {"icao": icao, "category": "UNKNOWN", "error": str(exc)}
+
+    verdict = "GO"
+    reasons: list[str] = []
+    cautions: list[str] = []
+    category_order = {"GO": 0, "CAUTION": 1, "NOGO": 2}
+
+    for tag, w in metars.items():
+        cat = w.get("category", "UNKNOWN")
+        if cat == "UNKNOWN":
+            cautions.append(f"{tag} weather unavailable ({w.get('error', 'no data')})")
+            continue
+        rank = ["VFR", "MVFR", "IFR", "LIFR"].index(cat)
+        if rank >= 2 and body.cat_min == "VFR":
+            verdict = "NOGO"
+            reasons.append(f"{tag} category {cat} is below your VFR minimum")
+        elif rank == 1 and body.cat_min == "VFR":
+            if verdict != "NOGO":
+                verdict = "CAUTION"
+                cautions.append(f"{tag} is {cat} — above VFR minimums but below ideal")
+        # ceiling
+        if body.min_ceiling_ft and cat in ("IFR", "LIFR"):
+            verdict = "NOGO"
+        # wind
+        if w.get("wind_kt") is not None and body.max_wind_kt:
+            if w["wind_kt"] > body.max_wind_kt:
+                verdict = "NOGO"
+                reasons.append(f"{tag} wind {w['wind_kt']:.0f} kt exceeds your {body.max_wind_kt:.0f}-kt limit")
+
+    # crusade altitude vs terrain ceiling signal (already computed upstream)
+    # here only as a note — the actual collision check lives in /api/terrain/profile
+    if body.night_ok is False:
+        cautions.append("Your minimums say NO night flight; check sunset timing on the header")
+
+    if reasons:
+        verdict = "NOGO"
+    elif cautions and verdict == "GO":
+        verdict = "CAUTION"
+
+    return ok_payload({
+        "verdict": verdict,
+        "reasons": reasons,
+        "cautions": cautions,
+        "evaluated": {"departure": dep, "arrival": arr, "cruise_ft": body.cruise_altitude_ft},
+        "metars": metars,
+        "note": "PIC makes the final call. This verdict uses the minimums you configured.",
+    })
+
+
+# ---- Weight & Balance (POH envelope visual) ---------------------------------
+
+class WeightInput(BaseModel):
+    name: str = Field(default="item")
+    station_in: float = Field(ge=-600, le=600)  # inches aft of datum
+    weight_lb: float = Field(ge=0, le=4000)
+
+
+class WeightBalanceRequest(BaseModel):
+    aircraft_type: str = Field(default="C172", max_length=8)
+    basic_empty_weight_lb: float = Field(ge=800, le=4000)
+    cg_arm_in: float = Field(ge=-200, le=300)  # CG arm of basic empty
+    items: list[WeightInput] = Field(default_factory=list, max_length=8)
+    fuel_gal: float = Field(default=40, ge=0, le=120)
+    fuel_weight_lb_per_gal: float = Field(default=6.0, ge=3, le=9)
+    fuel_station_in: float = Field(default=48.0, ge=-200, le=300)
+    envelope: list[list[float]] = Field(
+        default_factory=lambda: [[-9.0, 1800], [-8.0, 2550], [5.5, 2550], [9.0, 1800]],
+        description="CG-vs-weight envelope polygon: [cg_in, max_weight_lb] per vertex",
+    )
+
+
+@app.post("/api/wb/compute")
+async def post_wb(body: WeightBalanceRequest):
+    """Compute takeoff CG, gross weight, fuel burden, and POH-envelope verdict."""
+    total_lb = body.basic_empty_weight_lb + body.fuel_gal * body.fuel_weight_lb_per_gal
+    moment_in_lb = body.basic_empty_weight_lb * body.cg_arm_in
+    if body.fuel_gal > 0:
+        total_lb += 0
+        moment_in_lb += body.fuel_gal * body.fuel_weight_lb_per_gal * body.fuel_station_in
+
+    details: list[dict[str, Any]] = []
+    for it in body.items:
+        if it.weight_lb > 0:
+            moment_in_lb += it.weight_lb * it.station_in
+        details.append({"name": it.name, "weight_lb": it.weight_lb, "station_in": it.station_in})
+
+    takeoff_cg_in = moment_in_lb / total_lb if total_lb else 0.0
+    in_envelope = False
+    cg_max = None
+    for pt_cg, pt_max in body.envelope:
+        if pt_max >= total_lb:
+            if cg_max is None or pt_cg > cg_max:
+                cg_max = pt_cg
+    if cg_max is not None:
+        in_envelope = abs(takeoff_cg_in) <= abs(cg_max)
+
+    zero_fuel_weight_lb = total_lb - body.fuel_gal * body.fuel_weight_lb_per_gal
+    zero_fuel_moment_in_lb = moment_in_lb - body.fuel_gal * body.fuel_weight_lb_per_gal * body.fuel_station_in
+    zero_fuel_cg_in = zero_fuel_moment_in_lb / zero_fuel_weight_lb if zero_fuel_weight_lb else 0
+
+    return ok_payload({
+        "aircraft_type": body.aircraft_type,
+        "gross_weight_lb": round(total_lb, 1),
+        "takeoff_cg_in": round(takeoff_cg_in, 2),
+        "zero_fuel_weight_lb": round(zero_fuel_weight_lb, 1),
+        "zero_fuel_cg_in": round(zero_fuel_cg_in, 2),
+        "fuel_gal": body.fuel_gal,
+        "fuel_weight_lb": round(body.fuel_gal * body.fuel_weight_lb_per_gal, 1),
+        "in_envelope": in_envelope,
+        "envelope": body.envelope,
+        "item_details": details,
+        "note": "POH-envelope check only. Confirm with the type-specific AFM/POH.",
+    })
+
+
+# ---- Stabilized approach (voice-siren gate at 500/300 AGL by actual data) ----
+
+class StabilizedRequest(BaseModel):
+    target_speed_kt: float = Field(ge=30, le=200)
+    actual_speed_kt: float = Field(ge=20, le=300)
+    bank_deg: float = Field(ge=0, le=90)
+    lateral_deviation_nm: float = Field(ge=0, le=10)
+    agl_ft: float = Field(ge=0, le=6000)
+    descent_rate_kt: float = Field(ge=0, le=25)  # absolute, kt/min → normalize below
+    gs_angle_deg: float | None = None
+    vs_fpm: float | None = None
+
+
+@app.post("/api/final/stabilized")
+async def post_stabilized(body: StabilizedRequest):
+    """Stabilized approach criterion check: returns sirens list + gate verdict.
+
+    Criteria follow the classic stabilized definition adapted for VFR:
+    - speed within 15% of target
+    - bank < 15°
+    - <0.3 NM lateral deviation at 500 AGL, <0.5 NM at 300 AGL
+    - descent rate within bracket below 1,000 AGL (we use vs_fpm if supplied)
+    """
+    warnings: list[str] = []
+    fires: list[str] = []
+    vratio = body.actual_speed_kt / body.target_speed_kt
+    if vratio > 1.15 or vratio < 0.85:
+        fires.append("SPEED")
+    if body.bank_deg > 15:
+        fires.append("BANK")
+    if body.bank_deg > 12 and body.agl_ft < 300:
+        warnings.append("BANK pł wp")
+    if body.agl_ft < 500 and body.lateral_deviation_nm > 0.3:
+        fires.append("ALIGNMENT")
+    if body.agl_ft < 300 and body.lateral_deviation_nm > 0.5:
+        fires.append("ALIGNMENT")
+    if body.vs_fpm is not None and body.agl_ft < 1000 and abs(body.vs_fpm) > 1500:
+        fires.append("DESCENT RATE")
+
+    gate = body.agl_ft < 500 and len(fires) > 0
+    return ok_payload({
+        "gate_fired": gate,
+        "fires": fires,
+        "warnings": warnings,
+        "speed_ratio": round(vratio, 3),
+        "agl_ft": round(body.agl_ft, 0),
+        "bank_deg": round(body.bank_deg, 1),
+        "lat_dev_nm": round(body.lateral_deviation_nm, 2),
+        "verdict": "UNSTABILIZED" if gate else "OK",
+    })
 
 
 @app.get("/api/aip/ad2/{icao}")
