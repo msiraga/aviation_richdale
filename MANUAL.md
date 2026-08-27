@@ -115,6 +115,15 @@ step · and what's **behind it** (data source, physics, honest limits).
 ## 4. Before flight — planning & briefing
 
 ### 4.1 Route composer
+
+The composer is laid out for cockpit use: three bordered groups
+(ROUTE / PERFORMANCE / EXECUTE) inside a 400 px sidebar, 16 px input
+type, and a single primary **Compute flight plan** button at the bottom.
+Each waypoint renders as its own row with a numbered badge, a colored
+type tag (AD / NAV / RP / FIX) and a large × to delete, so the list stays
+readable when it grows. Altitude has quick-set chips (2500/3500/4500/6500/9500)
+above the slider, and the **Edit on map** + scenario controls sit side by
+side under the big Compute button so they don't compete with it.
 * **Where:** **PLAN** chip, left sidebar.
 * **When:** before every flight.
 * **How:** build the route from **any mix** of these entry forms — departure
@@ -160,7 +169,15 @@ step · and what's **behind it** (data source, physics, honest limits).
   breaches the 1,000 ft VFR safety ceiling under your planned cruise, showing
   how many sectors breach and the worst margin.
 
-### 4.4 WEATHER tab
+### 4.4 WEATHER brief (drawer)
+
+> The three heavy brief cards (METAR/TAF, SIGWX charts, SIGMET) moved out
+> of the nav log into a **dedicated right-side drawer** so the weather brief
+> is accessible at any moment — before AND after computing a route. Open
+> it with the **WX · BRIEF** chip in the top toolbar, or the "Open full
+> weather brief" button inside the nav log's WEATHER tab. Close with the
+> X or the CLOSE button. The drawer auto-loads on first open.
+
 * **Airport WX brief** *(top card)* — a chip per airport on your route;
   tapping one shows its **real raw METAR** (latest plus the last few for
   trend) with a decoded one-liner beneath (wind/visibility/temp/QNH/wx), and
@@ -169,21 +186,19 @@ step · and what's **behind it** (data source, physics, honest limits).
 * **SIGMET · Spain (live)** — active SIGMETs for Madrid/Barcelona/Canarias
   FIRs as issued by AEMET and relayed through NOAA AWC, refreshed on demand.
   An empty list genuinely means *no active significant weather over Spain*.
-* **Wind advisor** — see 4.2.
-* **⏩ Fly-the-Future** — slider NOW→+12 h: departure/arrival categories step
-  through their TAF periods at that hour and a marker sweeps the cloud strip.
-  Stepwise by design — that is what TAF periods mean.
-* **TAF windows** — colour-coded validity bars (green/blue/red =
-  VFR/MVFR/IFR), TEMPO/PROB as thin sub-bars; long-press for decoded values.
-* **Cloud strip** — 12 h of low/mid/high cloud columns at the route midpoint.
+* **Wind advisor** — see 4.2 (lives in the nav log WEATHER tab).
+* **⏩ Fly-the-Future** — slider NOW→+12 h (in the nav log WEATHER tab).
 
-> **Weather charts** come from three AEMET sources, each labeled on the card:
+> **Weather charts** come from four AEMET sources, each labeled on the card:
 > **SIGWX +24…+72 h** (mapa de frentes — public, no key, latest model run
 > auto-discovered), **Surface analysis** and **Forecast maps H+24/48/72**
 > (OpenData API — need `AEMET_API_KEY=…` in `.env.txt`, fetched through your
-> browser so AEMET's bot shield passes you). The old OpenData significant-
-> weather archive is discontinued by AEMET itself ("No hay datos" for every
-> date since 2020), which is why the SIGWX row reads the public page instead.
+> browser so AEMET's bot shield passes you), and **SIGWX ES · 6 h**
+> (AEMET-fed Spain significant-weather PNG, refreshed upstream every six
+> hours and cached in our backend for 90 minutes so the chart is always
+> one tap away). The old OpenData significant-weather archive is
+> discontinued by AEMET itself ("No hay datos" for every date since 2020),
+> which is why the SIGWX row reads the public + aerobrava sources instead.
 > If a chart button errors, press **DIAGNOSE**: it prints per-endpoint HTTP
 > status and byte counts so you can see exactly where it broke.
 
@@ -454,7 +469,7 @@ altitude feeding Night check, Guardian and FINAL callouts.
 | METAR/TAF/history | NOAA AWC JSON | none (fresh) | loud error; stale values labelled |
 | Raw METAR/TAF briefing | NOAA AWC `format=raw` feeds | none (fresh) | per-airport visible error |
 | Spain SIGMETs (AEMET-issued) | NOAA AWC SIGMET feed, FIR-filtered | none (fresh) | visible "feed unavailable" note |
-| AEMET SIGWX charts / analysis | aemet.es mapa de frentes (public) + OpenData API (`AEMET_API_KEY`) | memory 30 min (frentes) / disk per-image | DIAGNOSE button shows per-endpoint HTTP+bytes |
+| AEMET SIGWX charts / analysis | aemet.es mapa de frentes (public) + OpenData API (`AEMET_API_KEY`) + aerobrava.com (6-hourly Spain SIGWX) | memory 30 min (frentes) / disk 90 min (aerbrava) / per-image (OpenData) | DIAGNOSE button shows per-endpoint HTTP+bytes |
 | Winds aloft | Open-Meteo GFS pressure grids | 20 min/cell | level skipped, ranking continues |
 | Cloud forecast | Open-Meteo hourly low/mid/high | — | hidden with message |
 | Terrain | AWS terrarium tiles (SRTM) | disk | profile skipped with note |

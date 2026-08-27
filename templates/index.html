@@ -293,6 +293,9 @@ tailwind.config = {
     <button id="layerOfmToggle"   class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">VFR CHART</button>
     <button id="layerOpenaipToggle" class="chip px-3 py-1.5 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-400/20 transition hidden">AIRSPACE</button>
 
+    <span class="zone-label">WX</span>
+    <button id="wxDrawerToggle" class="rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-1.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/20 transition" title="full weather brief: METAR/TAF, SIGMET, SIGWX charts">BRIEF</button>
+
     <span class="zone-label">SKY</span>
     <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining at your position">☀ --:--Z</span>
 
@@ -559,6 +562,52 @@ tailwind.config = {
   </div>
 </div>
 
+<div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-40 w-[400px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3">
+  <div class="flex items-center justify-between">
+    <span class="text-xs font-extrabold uppercase tracking-[0.25em] text-sky-200">WEATHER BRIEF</span>
+    <button id="wxDrawerClose" class="chip px-3 py-1 text-xs">CLOSE &#10005;</button>
+  </div>
+  <div id="aptBriefCard" class="glass p-3 rounded-xl border border-emerald-400/20">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Airport WX · METAR / TAF</span>
+      <button id="briefRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
+    </div>
+    <div id="briefChips" class="flex flex-wrap gap-1.5 mb-2"></div>
+    <div id="briefBody" class="text-[11px] font-mono text-slate-200 leading-snug max-h-[240px] overflow-y-auto"></div>
+  </div>
+  <div id="sigwxCard" class="glass p-3 rounded-xl border border-violet-400/20">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">SIGWX charts · AEMET</span>
+      <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
+    </div>
+    <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
+      <button data-a="__frentes" data-d="000" class="chip px-2 py-1 text-[10px] font-bold">SIGWX +0</button>
+      <button data-a="__frentes" data-d="024" class="chip px-2 py-1 text-[10px] font-bold">+24</button>
+      <button data-a="__frentes" data-d="036" class="chip px-2 py-1 text-[10px] font-bold">+36</button>
+      <button data-a="__frentes" data-d="048" class="chip px-2 py-1 text-[10px] font-bold">+48</button>
+      <button data-a="__frentes" data-d="060" class="chip px-2 py-1 text-[10px] font-bold">+60</button>
+      <button data-a="__frentes" data-d="072" class="chip px-2 py-1 text-[10px] font-bold">+72</button>
+    </div>
+    <div class="flex flex-wrap gap-1.5 mb-2">
+      <span class="text-[9px] uppercase tracking-widest text-slate-500 self-center mr-1">API</span>
+      <button data-a="__analisis" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">ANALYSIS</button>
+      <button data-a="__previstos" data-d="h24" class="chip px-2 py-1 text-[10px] font-bold">FCST H+24</button>
+      <button data-a="__previstos" data-d="h48" class="chip px-2 py-1 text-[10px] font-bold">H+48</button>
+      <button data-a="__previstos" data-d="h72" class="chip px-2 py-1 text-[10px] font-bold">H+72</button>
+      <button data-a="__aerbrava" data-d="0" class="chip px-2 py-1 text-[10px] font-bold border border-violet-400/50" title="Spain significant weather, refreshed every ~6 h upstream">SIGWX ES · 6H</button>
+    </div>
+    <div id="sigwxBody" class="text-[11px] font-mono text-slate-300"></div>
+  </div>
+  <div id="sigmetCard" class="glass p-3 rounded-xl border border-rose-400/20">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">SIGMET · Spain (live)</span>
+      <button id="sigmetRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
+    </div>
+    <div id="sigmetBody" class="text-[11px] font-mono text-slate-200 leading-snug space-y-1"></div>
+    <div class="text-[8px] text-slate-500 mt-1.5 leading-snug">AEMET-issued SIGMETs via NOAA AWC · charts above from AEMET frentes/OpenData + 6-hourly Spain SIGWX.</div>
+  </div>
+</div>
+
 <div id="fplModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
   <div class="glass w-[640px] max-w-full max-h-[86vh] overflow-y-auto p-5 flex flex-col gap-3">
     <div class="flex items-center justify-between">
@@ -590,7 +639,7 @@ tailwind.config = {
 </div>
 
 <aside id="sidebar"
-       class="sidebar-enter absolute left-4 top-[76px] bottom-4 z-30 w-[380px] max-w-[calc(100vw-2rem)] flex flex-col gap-3 overflow-hidden">
+       class="sidebar-enter absolute left-4 top-[76px] bottom-4 z-30 w-[400px] max-w-[calc(100vw-2rem)] flex flex-col gap-3 overflow-hidden">
 
   <section class="glass p-5 flex-none">
     <div class="flex items-baseline justify-between mb-4">
@@ -598,85 +647,115 @@ tailwind.config = {
       <span class="text-[10px] text-slate-500 font-mono">ICAO / lat,lon</span>
     </div>
 
-    <form id="routeForm" class="space-y-3">
-      <div class="grid grid-cols-2 gap-3">
-        <label class="block">
-          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Departure</span>
-          <input id="depInput" required value="LEVC" maxlength="64"
-                 placeholder="LEVC"
-                 class="glass-input w-full px-3 py-2 font-mono text-sm text-cyan-50 placeholder-slate-600">
-        </label>
-        <label class="block">
-          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Arrival</span>
-          <input id="arrInput" required value="LEIB" maxlength="64"
-                 placeholder="LEIB"
-                 class="glass-input w-full px-3 py-2 font-mono text-sm text-cyan-50 placeholder-slate-600">
-        </label>
-      </div>
-
-      <div>
-        <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">En-route waypoints</span>
-        <div class="flex gap-2">
-          <input id="wptInput" maxlength="64" placeholder="+ VLC · NDB:SKA · RP:FOIOS · LEVC:FOIOS · 38.87,-1.37"
-                 class="glass-input w-full px-3 py-2 font-mono text-xs text-cyan-50 placeholder-slate-600">
-          <button type="button" id="wptAdd" class="chip px-3 text-lg leading-none text-cyan-200 hover:bg-cyan-400/20 transition">+</button>
+    <form id="routeForm" class="space-y-4">
+      <!-- ===================== ROUTE ===================== -->
+      <div class="rounded-xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
+        <div class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-cyan-300 flex items-center gap-2">
+          <span class="h-3 w-0.5 bg-cyan-400 rounded"></span>ROUTE
         </div>
-        <div id="wptChips" class="mt-2 flex flex-wrap gap-1.5 empty:mt-0"></div>
-        <div class="mt-1 text-[9px] text-slate-500 leading-snug">Airport ICAO · VOR/DME ident (VLC) · forced type <b>NDB:SKA</b> · ENAIRE reporting point <b>RP:FOIOS</b> or <b>LEVC:FOIOS</b> · raw <b>lat,lon</b></div>
-      </div>
-
-      <div>
-        <div class="flex justify-between items-baseline">
-          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Cruise altitude</span>
-          <span class="font-mono text-sm"><b id="altDisplay" class="text-neon-cyan neon-text-cyan">4500</b><span class="text-slate-500 text-[10px]"> FT · </span><b id="flDisplay" class="text-violet-300">FL045</b></span>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Departure</span>
+            <input id="depInput" required value="LEVC" maxlength="64"
+                   placeholder="LEVC"
+                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-cyan-50 placeholder-slate-600">
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Arrival</span>
+            <input id="arrInput" required value="LEIB" maxlength="64"
+                   placeholder="LEIB"
+                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-cyan-50 placeholder-slate-600">
+          </label>
         </div>
-        <input id="altSlider" type="range" min="500" max="15000" step="100" value="4500"
-               class="w-full accent-cyan-400 mt-1.5">
+
+        <div>
+          <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">En-route waypoints</span>
+          <div id="wptChips" class="space-y-1 empty:hidden"></div>
+          <div class="flex gap-2 mt-1.5">
+            <input id="wptInput" maxlength="64" placeholder="+ VLC · NDB:SKA · RP:FOIOS · 38.87,-1.37"
+                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-cyan-50 placeholder-slate-600">
+            <button type="button" id="wptAdd"
+                    class="shrink-0 rounded-lg border border-cyan-300/40 bg-cyan-400/15 w-11 text-xl leading-none text-cyan-100 hover:bg-cyan-400/30 transition">+</button>
+          </div>
+          <div class="mt-1 text-[9px] text-slate-500 leading-snug">ICAO · VOR ident (<b>VLC</b>) · forced type <b>NDB:SKA</b> · reporting point <b>RP:FOIOS</b> · raw <b>lat,lon</b></div>
+        </div>
       </div>
 
-      <div class="grid grid-cols-3 gap-3">
-        <label class="block col-span-1">
-          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">TAS kt</span>
-          <input id="tasInput" type="number" value="112" min="20" max="400" step="1"
-                 class="glass-input w-full px-3 py-2 font-mono text-sm text-emerald-100">
+      <!-- ================== PERFORMANCE ================== -->
+      <div class="rounded-xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
+        <div class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-emerald-300 flex items-center gap-2">
+          <span class="h-3 w-0.5 bg-emerald-400 rounded"></span>PERFORMANCE
+        </div>
+
+        <div>
+          <div class="flex justify-between items-baseline">
+            <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">Cruise altitude</span>
+            <span class="font-mono"><b id="altDisplay" class="text-neon-cyan neon-text-cyan text-lg">4500</b><span class="text-slate-500 text-[10px]"> FT · </span><b id="flDisplay" class="text-violet-300 text-sm">FL045</b></span>
+          </div>
+          <input id="altSlider" type="range" min="500" max="15000" step="100" value="4500"
+                 class="w-full accent-cyan-400 mt-1.5">
+          <div class="flex gap-1.5 mt-1.5" id="altPresets">
+            <button type="button" data-alt="2500" class="chip flex-1 py-1 text-[10px] font-mono">2500</button>
+            <button type="button" data-alt="3500" class="chip flex-1 py-1 text-[10px] font-mono">3500</button>
+            <button type="button" data-alt="4500" class="chip flex-1 py-1 text-[10px] font-mono">4500</button>
+            <button type="button" data-alt="6500" class="chip flex-1 py-1 text-[10px] font-mono">6500</button>
+            <button type="button" data-alt="9500" class="chip flex-1 py-1 text-[10px] font-mono">9500</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <label class="block col-span-1">
+            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">TAS kt</span>
+            <input id="tasInput" type="number" value="112" min="20" max="400" step="1"
+                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-emerald-100">
+          </label>
+          <label class="block col-span-1">
+            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Burn</span>
+            <input id="fuelInput" type="number" value="9.5" min="0.1" max="200" step="0.1"
+                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-emerald-100">
+          </label>
+          <label class="block col-span-1">
+            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Unit</span>
+            <select id="fuelUnit" class="glass-input w-full px-2 py-2.5 font-mono text-base text-emerald-100">
+              <option value="GPH">GPH</option>
+              <option value="LPH">LPH</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="block">
+          <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Dest. runway heading °M
+            <span class="normal-case font-normal text-slate-500">(crosswind)</span></span>
+          <input id="rwyInput" type="number" min="0" max="359.9" step="0.1" placeholder="e.g. 248 for RWY 24"
+                 class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100 placeholder-slate-600">
         </label>
-        <label class="block col-span-1">
-          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Burn</span>
-          <input id="fuelInput" type="number" value="9.5" min="0.1" max="200" step="0.1"
-                 class="glass-input w-full px-3 py-2 font-mono text-sm text-emerald-100">
-        </label>
-        <label class="block col-span-1">
-          <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Unit</span>
-          <select id="fuelUnit" class="glass-input w-full px-2 py-2 font-mono text-sm text-emerald-100">
-            <option value="GPH">GPH</option>
-            <option value="LPH">LPH</option>
+      </div>
+
+      <!-- ==================== EXECUTE ==================== -->
+      <div class="rounded-xl border border-white/10 bg-white/[0.03] p-3.5 space-y-2.5">
+        <div class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-violet-300 flex items-center gap-2">
+          <span class="h-3 w-0.5 bg-violet-400 rounded"></span>EXECUTE
+        </div>
+        <button id="submitBtn" type="submit"
+                class="btn-primary w-full rounded-xl py-3.5 text-sm uppercase tracking-[0.18em]">
+          Compute flight plan
+        </button>
+        <button id="simReplayBtn" type="button"
+                class="w-full rounded-xl py-2.5 text-[12px] uppercase tracking-[0.16em] border border-violet-300/40 bg-violet-400/10 text-violet-200 hover:bg-violet-400/25 transition">
+          ▶ Simulate flight (today's winds)
+        </button>
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
+          <button id="editTripBtn" type="button"
+                  class="chip rounded-xl py-2 text-[10px] uppercase tracking-[0.14em] text-cyan-200">
+            ✎ Edit on map
+          </button>
+          <select id="simScenario" class="glass-input rounded-xl py-2 px-2 font-mono text-[11px] text-violet-100">
+            <option value="plain">Scenario: plain</option>
+            <option value="engine-mid">Eng fail mid-route</option>
+            <option value="engine-late">Eng fail late</option>
           </select>
-        </label>
+        </div>
       </div>
-
-      <label class="block">
-        <span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">Destination runway heading °M <span class="normal-case font-normal text-slate-500">(for crosswind)</span></span>
-        <input id="rwyInput" type="number" min="0" max="359.9" step="0.1" placeholder="e.g. 248 for RWY 24"
-               class="glass-input w-full px-3 py-2 font-mono text-sm text-amber-100 placeholder-slate-600">
-      </label>
-
-      <button id="editTripBtn" type="button"
-              class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-cyan-200">
-        ✎ Edit trip on map
-      </button>
-      <select id="simScenario" class="glass-input w-full rounded-xl py-2 px-3 font-mono text-xs text-violet-100 mt-2">
-        <option value="plain">Scenario: plain replay (no events)</option>
-        <option value="engine-mid">Scenario: engine failure mid-route</option>
-        <option value="engine-late">Scenario: engine failure late</option>
-      </select>
-      <button id="simReplayBtn" type="button"
-              class="chip w-full rounded-xl py-2 text-[10px] uppercase tracking-[0.18em] mt-2 text-violet-200">
-        ▶ Simulate flight (today's winds)
-      </button>
-      <button id="submitBtn" type="submit"
-              class="btn-primary w-full rounded-xl py-3 text-sm uppercase tracking-[0.18em] mt-1">
-        Compute flight plan
-      </button>
     </form>
   </section>
 
@@ -726,47 +805,15 @@ tailwind.config = {
       </div>
     </div>
 
-    <!-- WEATHER: airport brief, wind advisor, TAF windows, SIGMET, clouds -->
+    <!-- WEATHER: wind advisor, Fly-the-Future, TAF windows, clouds.
+         The heavy brief cards (METAR/TAF, SIGWX, SIGMET) moved to #wxDrawer,
+         reachable from the top-bar WX BRIEF button at any time. -->
     <div id="tab-wx" class="hidden">
-      <div id="aptBriefCard" class="glass p-3 rounded-xl border border-emerald-400/20">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Airport WX · METAR / TAF</span>
-          <button id="briefRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
-        </div>
-        <div id="briefChips" class="flex flex-wrap gap-1.5 mb-2"></div>
-        <div id="briefBody" class="text-[11px] font-mono text-slate-200 leading-snug max-h-[240px] overflow-y-auto"></div>
-      </div>
-      <div id="sigwxCard" class="glass mt-3 p-3 rounded-xl border border-violet-400/20">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">SIGWX charts · AEMET</span>
-          <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
-        </div>
-        <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
-          <button data-a="__frentes" data-d="000" class="chip px-2 py-1 text-[10px] font-bold">SIGWX +0</button>
-          <button data-a="__frentes" data-d="024" class="chip px-2 py-1 text-[10px] font-bold">+24</button>
-          <button data-a="__frentes" data-d="036" class="chip px-2 py-1 text-[10px] font-bold">+36</button>
-          <button data-a="__frentes" data-d="048" class="chip px-2 py-1 text-[10px] font-bold">+48</button>
-          <button data-a="__frentes" data-d="060" class="chip px-2 py-1 text-[10px] font-bold">+60</button>
-          <button data-a="__frentes" data-d="072" class="chip px-2 py-1 text-[10px] font-bold">+72</button>
-        </div>
-        <div class="flex flex-wrap gap-1.5 mb-2">
-          <span class="text-[9px] uppercase tracking-widest text-slate-500 self-center mr-1">API (key)</span>
-          <button data-a="__analisis" data-d="0" class="chip px-2 py-1 text-[10px] font-bold">SURFACE ANALYSIS</button>
-          <button data-a="__previstos" data-d="h24" class="chip px-2 py-1 text-[10px] font-bold">FCST H+24</button>
-          <button data-a="__previstos" data-d="h48" class="chip px-2 py-1 text-[10px] font-bold">H+48</button>
-          <button data-a="__previstos" data-d="h72" class="chip px-2 py-1 text-[10px] font-bold">H+72</button>
-        </div>
-        <div id="sigwxBody" class="text-[11px] font-mono text-slate-300"></div>
-      </div>
-      <div id="sigmetCard" class="glass mt-3 p-3 rounded-xl border border-rose-400/20">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-300">SIGMET · Spain (live)</span>
-          <button id="sigmetRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
-        </div>
-        <div id="sigmetBody" class="text-[11px] font-mono text-slate-200 leading-snug space-y-1"></div>
-        <div class="text-[8px] text-slate-500 mt-1.5 leading-snug">Official AEMET-issued SIGMETs relayed via NOAA AWC. For AEMET's significant-weather CHARTS, set the free AEMET_API_KEY env — see MANUAL §4.4.</div>
-      </div>
-      <div id="windAdvice" class="glass mt-3 p-3 rounded-xl border border-sky-400/20"></div>
+      <button id="wxDrawerFromLog" type="button"
+              class="chip w-full rounded-xl py-2.5 text-[11px] uppercase tracking-[0.18em] text-sky-200 border border-sky-300/30 bg-sky-400/10 hover:bg-sky-400/20 transition mb-3">
+        Open full weather brief &#8594;
+      </button>
+      <div id="windAdvice" class="glass p-3 rounded-xl border border-sky-400/20"></div>
       <div id="futureScrub" class="glass mt-3 p-3 rounded-xl border border-amber-400/20 hidden">
         <div class="flex items-center justify-between mb-1">
           <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Fly the future</span>
@@ -1271,17 +1318,35 @@ function renderRoute(legs, labels) {
 
 const waypointList = [];
 
+function wptTag(wpt) {
+  if (/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(wpt)) return { label: 'FIX', cls: 'text-sky-300 border-sky-400/40' };
+  const m = wpt.match(/^([A-Z]+):(.+)$/);
+  if (m) {
+    const kind = m[1];
+    if (kind === 'RP') return { label: 'RP', cls: 'text-violet-300 border-violet-400/40' };
+    if (kind.length === 4) return { label: 'AD ' + kind, cls: 'text-cyan-300 border-cyan-400/40' };
+    return { label: kind, cls: 'text-amber-300 border-amber-400/40' };
+  }
+  if (/^[A-Z]{4}$/.test(wpt)) return { label: 'AD', cls: 'text-cyan-300 border-cyan-400/40' };
+  return { label: 'NAV', cls: 'text-amber-300 border-amber-400/40' };
+}
+
 function renderChips() {
   const zone = $('wptChips');
   zone.innerHTML = '';
   waypointList.forEach((wpt, i) => {
-    const chip = el('div', 'chip flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-cyan-100');
-    chip.append(el('span', null, wpt));
-    const x = el('button', 'chip-remove text-slate-400 hover:text-rose-400 font-bold', '×');
+    const row = el('div', 'flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5');
+    const idx = el('span', 'shrink-0 h-5 min-w-[20px] px-1 rounded bg-cyan-400/20 text-cyan-200 text-[10px] font-extrabold flex items-center justify-center', String(i + 1));
+    const code = el('span', 'font-mono text-[14px] text-cyan-50 truncate', wpt);
+    code.title = wpt;
+    const tag = wptTag(wpt);
+    const badge = el('span', `shrink-0 ml-auto rounded border px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider ${tag.cls}`, tag.label);
+    const x = el('button', 'shrink-0 w-6 h-6 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 font-bold text-sm', '×');
     x.type = 'button';
+    x.title = 'remove waypoint';
     x.addEventListener('click', () => { waypointList.splice(i, 1); renderChips(); });
-    chip.appendChild(x);
-    zone.appendChild(chip);
+    row.append(idx, code, badge, x);
+    zone.appendChild(row);
   });
 }
 
@@ -1300,6 +1365,14 @@ function addWaypointFromInput() {
 }
 $('wptAdd').addEventListener('click', addWaypointFromInput);
 $('wptInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addWaypointFromInput(); } });
+
+$('altPresets')?.addEventListener('click', (ev) => {
+  const b = ev.target?.closest('button[data-alt]');
+  if (!b) return;
+  const s = $('altSlider');
+  s.value = b.dataset.alt;
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+});
 
 /* --------------------- edit the trip directly on the map ------------------- */
 
@@ -4807,6 +4880,28 @@ async function aemetFetchJson(path) {
 }
 
 let frentesCache = null;
+let wxDrawerLoaded = false;
+
+function openWxDrawer() {
+  const d = $('wxDrawer');
+  d.classList.remove('hidden');
+  d.classList.add('flex');
+  if (!wxDrawerLoaded) {
+    wxDrawerLoaded = true;
+    loadAirportBrief();
+    loadSpainSigmet();
+  }
+}
+function closeWxDrawer() {
+  const d = $('wxDrawer');
+  d.classList.add('hidden');
+  d.classList.remove('flex');
+}
+$('wxDrawerToggle')?.addEventListener('click', () => {
+  $('wxDrawer').classList.contains('hidden') ? openWxDrawer() : closeWxDrawer();
+});
+$('wxDrawerClose')?.addEventListener('click', closeWxDrawer);
+$('wxDrawerFromLog')?.addEventListener('click', openWxDrawer);
 
 async function sigwxGo(ambito, dia) {
   if (sigwxBusy) return;
@@ -4814,10 +4909,17 @@ async function sigwxGo(ambito, dia) {
   const box = $('sigwxBody');
   const label = ambito === '__analisis' ? 'surface analysis'
     : ambito === '__previstos' ? `forecast ${dia.toUpperCase()}`
+    : ambito === '__aerbrava' ? 'Spain SIGWX (6 h)'
     : ambito === '__frentes' ? `SIGWX +${dia}h` : dia;
   box.innerHTML = `<span class="text-slate-500">fetching ${label} chart…</span>`;
   $('sigwxCard').querySelectorAll('button[data-a]').forEach(b => b.style.background = '');
   try {
+    if (ambito === '__aerbrava') {
+      box.innerHTML =
+        `<img src="/api/charts/sigwx_es?v=${Date.now()}" alt="Spain SIGWX" class="w-full rounded-lg my-1 bg-white/5">` +
+        `<div class="text-[8px] text-slate-500 mt-1">Spain significant weather · refreshed ~6 h upstream · ${new Date().toLocaleTimeString()}Z</div>`;
+      return;
+    }
     if (ambito === '__frentes') {
       if (!frentesCache) frentesCache = await api('/api/aemet/frentes');
       const img = (frentesCache.images || []).find(i => i.step === dia);

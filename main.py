@@ -1239,6 +1239,31 @@ async def get_aemet_frentes():
     raise BadRequest("no significant-weather chart run found on aemet.es")
 
 
+@app.get("/api/charts/sigwx_es")
+async def get_sigwx_es():
+    """Spain significant-weather chart PNG (AEMET-fed, refreshed ~6 h upstream).
+
+    Served through our cache so the browser never hotlinks and mixed-content
+    never bites. 90-minute TTL matches the upstream refresh cadence.
+    """
+    import time as _time
+    cache = DATA_DIR / "cache" / "aemet"
+    cache.mkdir(parents=True, exist_ok=True)
+    fp = cache / "sigwx_es.png"
+    if fp.is_file() and _time.time() - fp.stat().st_mtime < 5400:
+        return Response(content=fp.read_bytes(), media_type="image/png")
+    url = "https://www.aerbrava.com/im/imcomp/sigesp.png"
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        r = await client.get(url)
+        if r.status_code != 200 or len(r.content) < 1000:
+            raise BadRequest(f"chart source returned HTTP {r.status_code}")
+        ct = r.headers.get("content-type", "")
+        if not ct.startswith("image/"):
+            raise BadRequest("chart source did not return an image")
+        fp.write_bytes(r.content)
+    return Response(content=fp.read_bytes(), media_type="image/png")
+
+
 @app.get("/api/aemet/image")
 async def get_aemet_image(f: str):
     """Serve cached AEMET image by filename only (no paths, no traversal)."""
