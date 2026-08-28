@@ -305,6 +305,15 @@ tailwind.config = {
 
     <span class="zone-label">WX</span>
     <button id="wxDrawerToggle" class="rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-1.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/20 transition" title="full weather brief: METAR/TAF, SIGMET, SIGWX charts" data-doc="chip.wxbrief">BRIEF</button>
+    <button id="minStampFloating" type="button"
+            class="rounded-lg border border-emerald-300/40 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-400/20 transition"
+            title="personal minimums — tap to edit">
+      <span id="minStampFloatingText">GO</span>
+    </button>
+    <button id="corridorBtnTop" class="rounded-lg border border-violet-300/30 bg-violet-400/10 px-3 py-1.5 text-[11px] font-bold text-violet-200 hover:bg-violet-400/20 transition"
+            title="3D corridor terrain view with aircraft">
+      CORRIDOR
+    </button>
 
     <span class="zone-label">SKY</span>
     <span id="sunChip" class="font-mono text-[10px] text-amber-200/90 select-none whitespace-nowrap" title="sunset (UTC) and daylight remaining at your position">☀ --:--Z</span>
@@ -677,8 +686,7 @@ tailwind.config = {
   </div>
 </div>
 
-<div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-50 w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3 pointer-events-auto"
-     style="transform: translateZ(0);">
+<div id="wxDrawer" class="hidden fixed top-[76px] bottom-4 right-4 z-50 w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto space-y-3 pointer-events-auto">
   <div class="flex items-center justify-between glass p-3 rounded-xl border border-sky-300/30">
     <div class="flex items-center gap-2">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/><circle cx="12" cy="12" r="4"/></svg>
@@ -4273,21 +4281,28 @@ setInterval(() => {
 const corridorOriginalParent = $('terrainCanvas').parentElement;
 let corridorOpen = false, corridorProgressTimer = null;
 
-$('corridorBtn').addEventListener('click', () => {
+$('corridorBtn').addEventListener('click', openCorridor);
+$('corridorBtnTop')?.addEventListener('click', openCorridor);
+
+function openCorridor() {
+  if (!lastNavlog) {
+    showToast('Compute a route first, then open the corridor.', 'warn');
+    return;
+  }
   const overlay = $('corridorOverlay');
-  overlay.appendChild($('terrainCanvas'));
+  const canvas = $('terrainCanvas');
+  if (canvas) overlay.appendChild(canvas);
   overlay.classList.remove('hidden');
   corridorOpen = true;
 
-  // sun-accurate lighting from present position / route midpoint
-  let lat = gpsPosition ? gpsPosition[0] : (lastNavlog ? lastNavlog.legs[0].geometry[0][0] : 39.5);
-  let lon = gpsPosition ? gpsPosition[1] : (lastNavlog ? lastNavlog.legs[0].geometry[0][1] : -0.48);
+  let lat = gpsPosition ? gpsPosition[0] : (lastNavlog.legs[0].geometry[0][0]);
+  let lon = gpsPosition ? gpsPosition[1] : (lastNavlog.legs[0].geometry[0][1]);
   const t = sunTimesUTC(lat, lon, new Date());
   if (t.sunrise && t.sunset) {
     const now = Date.now();
     const dayFrac = Math.max(0, Math.min(1, (now - t.sunrise) / (t.sunset - t.sunrise)));
-    const az = 90 + 180 * dayFrac;                 // east -> west arc
-    const alt = Math.sin(Math.PI * dayFrac) * 62;  // noon-ish peak
+    const az = 90 + 180 * dayFrac;
+    const alt = Math.sin(Math.PI * dayFrac) * 62;
     terrainScene.setSun(az, alt);
   }
   setTimeout(() => terrainScene._resize(), 50);
@@ -4297,7 +4312,7 @@ $('corridorBtn').addEventListener('click', () => {
     terrainScene.setProgress(window.__richdaleRouteProgress,
         lastNavlog?.terrain_profile_samples || null);
   }, 1500);
-});
+}
 
 $('corridorClose').addEventListener('click', () => {
   const overlay = $('corridorOverlay');
@@ -5363,20 +5378,29 @@ if (!minConfig) minConfig = {
 function stampFromVerdict(v) {
   const txt = $('minStampText');
   const stamp = $('minStamp');
+  const floatTxt = $('minStampFloatingText');
+  const floatStamp = $('minStampFloating');
   stamp.classList.remove('border-emerald-300/40', 'bg-emerald-400/10', 'border-amber-300/40',
                           'bg-amber-400/10', 'border-rose-400/50', 'bg-rose-500/15');
-  if (v === 'GO') {
-    stamp.classList.add('border-emerald-300/40', 'bg-emerald-400/10');
-    txt.classList.replace(txt.className, 'text-emerald-200');
-    txt.textContent = 'GO — CHECK BEFORE LIFTOFF';
-  } else if (v === 'CAUTION') {
-    stamp.classList.add('border-amber-300/40', 'bg-amber-400/10');
-    txt.className = 'text-amber-200';
-    txt.textContent = 'CAUTION';
-  } else {
-    stamp.classList.add('border-rose-400/50', 'bg-rose-500/15');
-    txt.className = 'text-rose-200';
-    txt.textContent = 'NOGO';
+  if (floatStamp) {
+    floatStamp.classList.remove('border-emerald-300/40', 'bg-emerald-400/10', 'border-amber-300/40',
+                          'bg-amber-400/10', 'border-rose-400/50', 'bg-rose-500/15');
+  }
+  const colors = {
+    GO: ['text-emerald-200', 'border-emerald-300/40', 'bg-emerald-400/10', 'GO — CHECK BEFORE LIFTOFF'],
+    CAUTION: ['text-amber-200', 'border-amber-300/40', 'bg-amber-400/10', 'CAUTION'],
+    NOGO: ['text-rose-200', 'border-rose-400/50', 'bg-rose-500/15', 'NOGO'],
+  };
+  const c = colors[v] || colors.GO;
+  stamp.classList.add(c[1], c[2]);
+  txt.className = c[0];
+  txt.textContent = c[3];
+  if (floatStamp) {
+    floatStamp.classList.add(c[1], c[2]);
+    if (floatTxt) {
+      floatTxt.className = c[0];
+      floatTxt.textContent = v;
+    }
   }
 }
 
@@ -5435,9 +5459,9 @@ $('minStamp')?.addEventListener('click', (ev) => {
   ev.preventDefault();
   openMinModal();
 });
-// also support touch/pointer
-$('minStamp')?.addEventListener('pointerdown', (ev) => {
+$('minStampFloating')?.addEventListener('click', (ev) => {
   ev.stopPropagation();
+  ev.preventDefault();
   openMinModal();
 });
 $('minClose')?.addEventListener('click', closeMinModal);
@@ -5475,20 +5499,23 @@ const wbState = {
 };
 
 function wbCompute() {
-  const empty = parseFloat($('wbEmpty').value) || 1680;
-  const cgArm = parseFloat($('wbCgArm').value) || 39.5;
-  const fuelGal = parseFloat($('wbFuel').value) || 0;
-  $('wbFuelDisplay').textContent = `${fuelGal} gal`;
+  const emptyEl = $('wbEmpty'), cgArmEl = $('wbCgArm'), fuelEl = $('wbFuel');
+  if (!emptyEl || !cgArmEl || !fuelEl) return; // DOM not ready
+  const empty = parseFloat(emptyEl.value) || 1680;
+  const cgArm = parseFloat(cgArmEl.value) || 39.5;
+  const fuelGal = parseFloat(fuelEl.value) || 0;
+  const fuelDisplay = $('wbFuelDisplay');
+  if (fuelDisplay) fuelDisplay.textContent = `${fuelGal} gal`;
 
   const body = {
     aircraft_type: 'C172',
     basic_empty_weight_lb: empty,
     cg_arm_in: cgArm,
-    items: wbState.items.map(it => ({
-      name: it.name,
-      station_in: it.station_in,
-      weight_lb: parseFloat($('wb' + it.name.replace(/\s/g, '')).value) || 0,
-    })),
+    items: wbState.items.map(it => {
+      const inputEl = $('wb' + it.name.replace(/\s/g, ''));
+      const weight = inputEl ? (parseFloat(inputEl.value) || 0) : 0;
+      return { name: it.name, station_in: it.station_in, weight_lb: weight };
+    }),
     fuel_gal: fuelGal,
     fuel_weight_lb_per_gal: 6.0,
     fuel_station_in: 48.0,
@@ -5614,9 +5641,11 @@ function wbCompute() {
 }
 
 ['wbEmpty', 'wbCgArm', 'wbPilot', 'wbPass', 'wbBag', 'wbFuel'].forEach(id => {
-  $(id)?.addEventListener('input', wbCompute);
+  const el = $(id);
+  if (el) el.addEventListener('input', wbCompute);
 });
-wbCompute();
+// Delay initial compute to ensure all DOM elements are ready
+setTimeout(wbCompute, 100);
 
 /* ---- voice callouts ---- */
 function speak(text) {
