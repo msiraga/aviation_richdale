@@ -705,7 +705,10 @@ tailwind.config = {
   <div id="sigwxCard" class="glass p-3 rounded-xl border border-violet-400/20">
     <div class="flex items-center justify-between mb-1.5">
       <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">SIGWX charts · AEMET</span>
-      <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
+      <div class="flex gap-1">
+        <button id="sigwxRefresh" class="chip px-2 py-0.5 text-[9px]">REFRESH</button>
+        <button id="sigwxDiag" class="chip px-2 py-0.5 text-[9px]">DIAGNOSE</button>
+      </div>
     </div>
     <div class="flex flex-wrap gap-1.5 mb-2" id="sigwxTabs">
       <button data-a="__frentes" data-d="000" class="chip px-2 py-1 text-[10px] font-bold">SIGWX +0</button>
@@ -917,6 +920,17 @@ tailwind.config = {
         <div class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-amber-300 flex items-center gap-2">
           <span class="h-3 w-0.5 bg-amber-400 rounded"></span>WEIGHT &amp; BALANCE
         </div>
+        <label class="block">
+          <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Aircraft type</span>
+          <select id="wbAircraftType" class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100">
+            <option value="C172">Cessna 172S Skyhawk</option>
+            <option value="C182">Cessna 182T Skylane</option>
+            <option value="PA28">Piper PA-28-181 Archer</option>
+            <option value="DA40">Diamond DA40 NG</option>
+            <option value="M20J">Mooney M20J</option>
+            <option value="custom">Custom...</option>
+          </select>
+        </label>
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Basic empty (lb)</span>
@@ -929,23 +943,7 @@ tailwind.config = {
                    class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100">
           </label>
         </div>
-        <div class="grid grid-cols-3 gap-3">
-          <label class="block">
-            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Pilot (lb)</span>
-            <input id="wbPilot" type="number" value="180" min="0" max="400" step="5"
-                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100">
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Passenger (lb)</span>
-            <input id="wbPass" type="number" value="0" min="0" max="400" step="5"
-                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100">
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-[11px] font-bold uppercase tracking-widest text-slate-400">Baggage (lb)</span>
-            <input id="wbBag" type="number" value="0" min="0" max="200" step="5"
-                   class="glass-input w-full px-3 py-2.5 font-mono text-base text-amber-100">
-          </label>
-        </div>
+        <div id="wbStations" class="grid grid-cols-2 gap-3"></div>
         <div class="flex items-center justify-between">
           <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">Fuel (gal)</span>
           <span class="font-mono text-base text-amber-200" id="wbFuelDisplay">40 gal</span>
@@ -5489,18 +5487,63 @@ window.addEventListener('richdale:computed', () => {
 
 /* ---------- Weight & Balance: POH envelope visual ---------- */
 
-const wbState = {
-  envelope: [[-9.0, 1800], [-8.0, 2550], [5.5, 2550], [9.0, 1800]],
-  items: [
-    { name: 'Pilot', station_in: 37.0, weight_lb: 180 },
-    { name: 'Passenger', station_in: 37.0, weight_lb: 0 },
-    { name: 'Baggage', station_in: 95.0, weight_lb: 0 },
-  ],
+let wbPresets = null;
+let wbState = {
+  aircraftType: 'C172',
+  envelope: [[35.0, 1500], [35.0, 2550], [47.0, 2550], [47.0, 1500]],
+  items: [],
+  fuelStation: 48.0,
 };
+
+// Load presets from server
+async function loadWbPresets() {
+  try {
+    const res = await api('/api/wb/presets');
+    wbPresets = res.presets;
+    wbApplyPreset('C172');
+  } catch (e) {
+    console.error('Failed to load W&B presets:', e);
+  }
+}
+
+function wbApplyPreset(typeKey) {
+  if (!wbPresets) return;
+  if (typeKey === 'custom') return; // user keeps their own values
+  const p = wbPresets[typeKey];
+  if (!p) return;
+  wbState.aircraftType = typeKey;
+  wbState.envelope = p.envelope;
+  wbState.fuelStation = p.fuel_station_in;
+  wbState.items = Object.entries(p.stations).map(([name, arm]) => ({ name, station_in: arm, weight_lb: 0 }));
+  // Apply values to inputs
+  const typeSel = $('wbAircraftType');
+  if (typeSel) typeSel.value = typeKey;
+  const empty = $('wbEmpty'); if (empty) empty.value = p.basic_empty_weight_lb;
+  const cgArm = $('wbCgArm'); if (cgArm) cgArm.value = p.cg_arm_in;
+  wbRenderStations();
+  wbCompute();
+}
+
+function wbRenderStations() {
+  const container = $('wbStations');
+  if (!container) return;
+  container.innerHTML = '';
+  wbState.items.forEach(item => {
+    const safeName = item.name.replace(/\s/g, '');
+    const div = document.createElement('label');
+    div.className = 'block';
+    div.innerHTML = `<span class="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">${item.name} (arm ${item.station_in.toFixed(0)})</span>
+      <input id="wb${safeName}" type="number" value="0" min="0" max="400" step="5"
+             class="glass-input w-full px-3 py-2 font-mono text-[14px] text-amber-100">`;
+    container.appendChild(div);
+    const input = div.querySelector('input');
+    input.addEventListener('input', wbCompute);
+  });
+}
 
 function wbCompute() {
   const emptyEl = $('wbEmpty'), cgArmEl = $('wbCgArm'), fuelEl = $('wbFuel');
-  if (!emptyEl || !cgArmEl || !fuelEl) return; // DOM not ready
+  if (!emptyEl || !cgArmEl || !fuelEl) return;
   const empty = parseFloat(emptyEl.value) || 1680;
   const cgArm = parseFloat(cgArmEl.value) || 39.5;
   const fuelGal = parseFloat(fuelEl.value) || 0;
@@ -5508,7 +5551,7 @@ function wbCompute() {
   if (fuelDisplay) fuelDisplay.textContent = `${fuelGal} gal`;
 
   const body = {
-    aircraft_type: 'C172',
+    aircraft_type: wbState.aircraftType,
     basic_empty_weight_lb: empty,
     cg_arm_in: cgArm,
     items: wbState.items.map(it => {
@@ -5518,7 +5561,7 @@ function wbCompute() {
     }),
     fuel_gal: fuelGal,
     fuel_weight_lb_per_gal: 6.0,
-    fuel_station_in: 48.0,
+    fuel_station_in: wbState.fuelStation,
     envelope: wbState.envelope,
   };
 
@@ -5528,12 +5571,8 @@ function wbCompute() {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
 
-    // Find actual CG and weight ranges from envelope
     const env = res.envelope || [];
-    if (env.length < 3) {
-      out.innerHTML = `<span class="text-rose-300">No envelope data</span>`;
-      return;
-    }
+    if (env.length < 3) { out.innerHTML = `<span class="text-rose-300">No envelope data</span>`; return; }
     const cgVals = env.map(e => e[0]);
     const wVals = env.map(e => e[1]);
     const cgMin = Math.min(...cgVals) - 2;
@@ -5543,28 +5582,15 @@ function wbCompute() {
     const cgRange = cgMax - cgMin;
     const wRange = wMax - wMin;
 
-    // Draw background grid
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(15,23,42,0.5)';
     ctx.fillRect(0, 0, W, H);
-
-    // Grid lines
     ctx.strokeStyle = 'rgba(71,85,105,0.3)';
     ctx.lineWidth = 0.5;
-    for (let i = 1; i < 8; i++) {
-      const x = (i / 8) * W;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (let i = 1; i < 6; i++) {
-      const y = (i / 6) * H;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
+    for (let i = 1; i < 8; i++) { const x = (i / 8) * W; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let i = 1; i < 6; i++) { const y = (i / 6) * H; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-    // Draw envelope polygon
-    const pts = env.map(([cg, maxW]) => [
-      ((cg - cgMin) / cgRange) * W,
-      H - ((maxW - wMin) / wRange) * H
-    ]);
+    const pts = env.map(([cg, maxW]) => [((cg - cgMin) / cgRange) * W, H - ((maxW - wMin) / wRange) * H]);
     ctx.beginPath();
     pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
     ctx.closePath();
@@ -5574,39 +5600,24 @@ function wbCompute() {
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    // Draw CG point
     const cgX = ((res.takeoff_cg_in - cgMin) / cgRange) * W;
     const cgY = H - ((res.gross_weight_lb - wMin) / wRange) * H;
-    // Glow
     const glow = ctx.createRadialGradient(cgX, cgY, 0, cgX, cgY, 20);
     glow.addColorStop(0, res.in_envelope ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(cgX - 20, cgY - 20, 40, 40);
-    // Point
     ctx.fillStyle = res.in_envelope ? '#22c55e' : '#ef4444';
-    ctx.beginPath();
-    ctx.arc(cgX, cgY, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(cgX, cgY, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
 
-    // Labels
     ctx.fillStyle = '#94a3b8';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('CG (in)', W / 2, H - 4);
-    ctx.save();
-    ctx.translate(12, H / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText('Weight (lb)', 0, 0);
-    ctx.restore();
-
-    // Axis tick labels
-    ctx.font = '9px monospace';
+    ctx.save(); ctx.translate(12, H / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Weight (lb)', 0, 0); ctx.restore();
+    ctx.font = '9px monospace'; ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#64748b';
     ctx.fillText(cgMin.toFixed(0), 20, H - 4);
     ctx.fillText(cgMax.toFixed(0), W - 20, H - 4);
     ctx.textAlign = 'right';
@@ -5614,38 +5625,36 @@ function wbCompute() {
     ctx.fillText(wMin.toFixed(0), W - 4, H - 4);
 
     out.innerHTML = `
-      <div class="flex justify-between">
-        <span>Gross weight:</span><span class="text-amber-200 font-bold">${res.gross_weight_lb.toLocaleString()} lb</span>
-      </div>
-      <div class="flex justify-between">
-        <span>Takeoff CG:</span><span class="text-cyan-200 font-bold">${res.takeoff_cg_in.toFixed(1)} in</span>
-      </div>
-      <div class="flex justify-between">
-        <span>Zero-fuel CG:</span><span class="text-slate-400">${res.zero_fuel_cg_in.toFixed(1)} in</span>
-      </div>
-      <div class="flex justify-between">
-        <span>Envelope:</span><span class="${res.in_envelope ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}">${res.in_envelope ? '✓ IN ENVELOPE' : '✗ OUT OF ENVELOPE'}</span>
-      </div>
+      <div class="flex justify-between"><span>Gross:</span><span class="text-amber-200 font-bold">${res.gross_weight_lb.toFixed(0)} lb</span></div>
+      <div class="flex justify-between"><span>Takeoff CG:</span><span class="text-cyan-200 font-bold">${res.takeoff_cg_in.toFixed(1)} in</span></div>
+      <div class="flex justify-between"><span>Zero-fuel CG:</span><span class="text-slate-400">${res.zero_fuel_cg_in.toFixed(1)} in</span></div>
+      <div class="flex justify-between"><span>Envelope:</span><span class="${res.in_envelope ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}">${res.in_envelope ? '✓ IN' : '✗ OUT'}</span></div>
     `;
   }).catch(err => {
     $('wbResult').innerHTML = `<span class="text-rose-300">W&B unavailable: ${err.message}</span>`;
-    // Still show the canvas with a placeholder
     const canvas = $('wbCanvas');
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#334155';
-    ctx.font = '14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('W&B unavailable', canvas.width / 2, canvas.height / 2);
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#334155';
+      ctx.font = '14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('W&B unavailable', canvas.width / 2, canvas.height / 2);
+    }
   });
 }
 
-['wbEmpty', 'wbCgArm', 'wbPilot', 'wbPass', 'wbBag', 'wbFuel'].forEach(id => {
+$('wbAircraftType')?.addEventListener('change', (e) => {
+  wbApplyPreset(e.target.value);
+});
+['wbEmpty', 'wbCgArm', 'wbFuel'].forEach(id => {
   const el = $(id);
   if (el) el.addEventListener('input', wbCompute);
 });
-// Delay initial compute to ensure all DOM elements are ready
-setTimeout(wbCompute, 100);
+
+// Init
+loadWbPresets();
+setTimeout(wbCompute, 200);
 
 /* ---- voice callouts ---- */
 function speak(text) {
@@ -6281,7 +6290,7 @@ async function sigwxGo(ambito, dia) {
   try {
     if (ambito === '__aerbrava') {
       box.innerHTML =
-        `<img src="/api/charts/sigwx_es?v=${Date.now()}" alt="Spain SIGWX" class="w-full rounded-lg my-1 bg-white/5">` +
+        `<img src="/api/charts/sigwx_es?force=1&t=${Date.now()}" alt="Spain SIGWX" class="w-full rounded-lg my-1 bg-white/5">` +
         `<div class="text-[8px] text-slate-500 mt-1">Spain significant weather · refreshed ~6 h upstream · ${new Date().toLocaleTimeString()}Z</div>`;
       return;
     }
@@ -6352,6 +6361,22 @@ $('sigwxDiag')?.addEventListener('click', async () => {
     ).join('') + `<div class="mt-1 ${d.gateway_serving_data ? 'text-emerald-300' : 'text-rose-300'}">${d.note}</div>
       <div class="text-[9px] text-slate-400 mt-1.5">Server-side requests are filtered by AEMET's bot shield — the CHART BUTTONS above fetch through your browser instead and normally work.</div>`;
   } catch (err) { box.innerHTML = `<span class="text-rose-300">diag failed: ${err.message}</span>`; }
+});
+
+$('sigwxRefresh')?.addEventListener('click', () => {
+  const box = $('sigwxBody');
+  box.innerHTML = '<span class="text-slate-500">force-refreshing all chart sources...</span>';
+  // Bust the aerobrava cache server-side
+  fetch('/api/charts/sigwx_es?force=1&t=' + Date.now()).catch(() => {});
+  // Find the last active chart button and re-click it
+  const activeBtn = document.querySelector('#sigwxCard button[data-a][style*="167,139,250"]');
+  if (activeBtn) {
+    activeBtn.click();
+    showToast('Charts refreshed', 'info', 3000);
+  } else {
+    // Default: re-render the aerobrava chart
+    sigwxGo('__aerbrava', '0');
+  }
 });
 
 async function loadTafTimelines(navlog) {

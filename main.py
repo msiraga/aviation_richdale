@@ -1240,20 +1240,21 @@ async def get_aemet_frentes():
 
 
 @app.get("/api/charts/sigwx_es")
-async def get_sigwx_es():
+async def get_sigwx_es(force: int = 0):
     """Spain significant-weather chart PNG (AEMET-fed, refreshed ~6 h upstream).
 
     Served through our cache so the browser never hotlinks and mixed-content
     never bites. 90-minute TTL matches the upstream refresh cadence; if the
     upstream goes empty we keep serving the last good chart instead of going
-    dark.
+    dark. Pass ?force=1 to bypass the cache and fetch a fresh copy.
     """
     import time as _time
     cache = DATA_DIR / "cache" / "aemet"
     cache.mkdir(parents=True, exist_ok=True)
     fp = cache / "sigwx_es.png"
-    if fp.is_file() and _time.time() - fp.stat().st_mtime < 5400:
-        return Response(content=fp.read_bytes(), media_type="image/png")
+    if fp.is_file() and _time.time() - fp.stat().st_mtime < 5400 and not force:
+        return Response(content=fp.read_bytes(), media_type="image/png",
+                        headers={"X-Cache": "HIT", "Cache-Control": "no-cache"})
     url = "https://www.aerbrava.com/im/imcomp/sigesp.png"
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True,
@@ -1266,11 +1267,13 @@ async def get_sigwx_es():
             r = await client.get(url)
             if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/") and len(r.content) > 1000:
                 fp.write_bytes(r.content)
-                return Response(content=fp.read_bytes(), media_type="image/png")
+                return Response(content=fp.read_bytes(), media_type="image/png",
+                                headers={"X-Cache": "MISS", "Cache-Control": "no-cache"})
     except httpx.HTTPError:
         pass
     if fp.is_file():
-        return Response(content=fp.read_bytes(), media_type="image/png")
+        return Response(content=fp.read_bytes(), media_type="image/png",
+                        headers={"X-Cache": "STALE", "Cache-Control": "no-cache"})
     raise BadRequest("chart source empty and no cached copy available yet")
 
 
@@ -1796,6 +1799,84 @@ class WeightInput(BaseModel):
     weight_lb: float = Field(ge=0, le=4000)
 
 
+# Aircraft type presets with POH weight-and-balance data.
+# All envelope polygons are [cg_arm_in, max_gross_weight_lb] vertices.
+# Sources: POH excerpts for each type (rounded to the nearest inch/pound
+# for the demo; pilots should always cross-check with the type's AFM/POH).
+AIRCRAFT_PRESETS: dict[str, dict[str, Any]] = {
+    "C172": {
+        "label": "Cessna 172S Skyhawk",
+        "basic_empty_weight_lb": 1680,
+        "cg_arm_in": 39.5,
+        "envelope": [[35.0, 1500], [35.0, 2550], [47.0, 2550], [47.0, 1500]],
+        "fuel_station_in": 48.0,
+        "fuel_weight_lb_per_gal": 6.0,
+        "stations": {
+            "Pilot": 37.0,
+            "Passenger": 37.0,
+            "Baggage A": 95.0,
+            "Baggage B": 123.0,
+        },
+    },
+    "C182": {
+        "label": "Cessna 182T Skylane",
+        "basic_empty_weight_lb": 1970,
+        "cg_arm_in": 39.1,
+        "envelope": [[35.0, 1800], [35.0, 3100], [46.5, 3100], [46.5, 1800]],
+        "fuel_station_in": 48.0,
+        "fuel_weight_lb_per_gal": 6.0,
+        "stations": {
+            "Pilot": 37.0,
+            "Passenger": 37.0,
+            "Baggage A": 95.0,
+            "Baggage B": 123.0,
+        },
+    },
+    "PA28": {
+        "label": "Piper PA-28-181 Archer",
+        "basic_empty_weight_lb": 1630,
+        "cg_arm_in": 86.7,
+        "envelope": [[82.0, 1500], [82.0, 2550], [93.0, 2550], [93.0, 1500]],
+        "fuel_station_in": 95.0,
+        "fuel_weight_lb_per_gal": 6.0,
+        "stations": {
+            "Pilot": 80.5,
+            "Passenger": 80.5,
+            "Baggage A": 98.0,
+            "Baggage B": 98.0,
+        },
+    },
+    "DA40": {
+        "label": "Diamond DA40 NG",
+        "basic_empty_weight_lb": 1785,
+        "cg_arm_in": 91.7,
+        "envelope": [[88.0, 1800], [88.0, 2930], [96.5, 2930], [96.5, 1800]],
+        "fuel_station_in": 95.0,
+        "fuel_weight_lb_per_gal": 6.0,
+        "stations": {
+            "Pilot": 80.0,
+            "Passenger": 80.0,
+            "Baggage A": 95.0,
+            "Baggage B": 123.0,
+        },
+    },
+    "M20J": {
+        "label": "Mooney M20J",
+        "basic_empty_weight_lb": 1700,
+        "cg_arm_in": 78.0,
+        "envelope": [[74.0, 1500], [74.0, 2740], [84.0, 2740], [84.0, 1500]],
+        "fuel_station_in": 78.0,
+        "fuel_weight_lb_per_gal": 6.0,
+        "stations": {
+            "Pilot": 78.0,
+            "Passenger": 78.0,
+            "Baggage A": 95.0,
+            "Baggage B": 121.0,
+        },
+    },
+}
+
+
 class WeightBalanceRequest(BaseModel):
     aircraft_type: str = Field(default="C172", max_length=8)
     basic_empty_weight_lb: float = Field(ge=800, le=4000)
@@ -1805,9 +1886,26 @@ class WeightBalanceRequest(BaseModel):
     fuel_weight_lb_per_gal: float = Field(default=6.0, ge=3, le=9)
     fuel_station_in: float = Field(default=48.0, ge=-200, le=300)
     envelope: list[list[float]] = Field(
-        default_factory=lambda: [[-9.0, 1800], [-8.0, 2550], [5.5, 2550], [9.0, 1800]],
+        default_factory=lambda: [[35.0, 1500], [35.0, 2550], [47.0, 2550], [47.0, 1500]],
         description="CG-vs-weight envelope polygon: [cg_in, max_weight_lb] per vertex",
     )
+
+
+@app.get("/api/wb/presets")
+async def get_wb_presets():
+    """Return aircraft type presets for the W&B UI."""
+    out = {}
+    for key, p in AIRCRAFT_PRESETS.items():
+        out[key] = {
+            "label": p["label"],
+            "basic_empty_weight_lb": p["basic_empty_weight_lb"],
+            "cg_arm_in": p["cg_arm_in"],
+            "fuel_station_in": p["fuel_station_in"],
+            "fuel_weight_lb_per_gal": p["fuel_weight_lb_per_gal"],
+            "stations": p["stations"],
+            "envelope": p["envelope"],
+        }
+    return ok_payload({"presets": out})
 
 
 @app.post("/api/wb/compute")
